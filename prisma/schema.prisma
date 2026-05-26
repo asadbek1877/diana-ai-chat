@@ -13,6 +13,7 @@ model User {
   username   String?
   firstName  String?
   platform   String   @default("TELEGRAM")
+  isPaused   Boolean  @default(false)
   createdAt  DateTime @default(now())
   lastSeen   DateTime @updatedAt
 

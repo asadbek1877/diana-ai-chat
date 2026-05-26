@@ -1,24 +1,25 @@
 {
   "dependencies": {
+    "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "grammy": "^1.43.0",
-    "openai": "^6.39.0"
+    "openai": "^6.39.0",
+    "pg": "^8.21.0"
   },
   "devDependencies": {
     "@types/node": "^25.9.1",
+    "@types/pg": "^8.20.0",
     "nodemon": "^3.1.14",
     "prisma": "^7.8.0",
     "ts-node": "^10.9.2",
     "typescript": "^6.0.3"
-
-    }
-    ,
-    "scripts": {
-      "dev": "nodemon --watch \"src/**/*.ts\" --exec \"ts-node\" src/index.ts",
-      "build": "tsc",
-      "start": "node dist/index.js"
-    }
+  },
+  "scripts": {
+    "dev": "nodemon --watch \"src/**/*.ts\" --exec \"ts-node\" src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  }
 }
