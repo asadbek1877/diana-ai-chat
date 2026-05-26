@@ -6,28 +6,22 @@ import { getSystemPrompt } from "../ai/prompt";
 import { generateDianaResponse } from "../ai/openrouter";
 import { simulateHumanBehavior } from "./simulation";
 
-// Prisma 7 қоидаси бўйича PostgreSQL пулини яратамиз
 const pool = new Pool({ connectionString: process.env.DATABASE_URL as string });
 const adapter = new PrismaPg(pool);
-
-// Адаптерни Prisma-га узатамиз (энди у умуман хато бермайди)
 const prisma = new PrismaClient({ adapter });
 
-// .env файлидан гуруҳ ID-сини ўқиб оламиз
 const ADMIN_GROUP_ID = Number(process.env.ADMIN_GROUP_ID);
 
 export async function onMessage(ctx: Context) {
   try {
-    // TS хато бермаслиги учун ctx.chat борлигини текширамиз
     if (!ctx.message || !ctx.from || !ctx.chat) return;
 
     // -------------------------------------------------------------------------
-    // 1-ҚИСМ: АДМИН ГУРУҲДАН КЕЛГАН ЖАВОБЛАР (СИЗ ЁЗГАН ТАҚДИРДА)
+    // 1-ҚИСМ: АДМИН ГУРУҲДАН КЕЛГАН ЖАВОБЛАР
     // -------------------------------------------------------------------------
     if (ctx.chat.id === ADMIN_GROUP_ID) {
       if (ctx.message.reply_to_message && ctx.message.text) {
         const replyText = ctx.message.reply_to_message.text;
-        
         if (!replyText) return;
         
         const match = replyText.match(/ID:\s(\d+)/);
@@ -72,7 +66,18 @@ export async function onMessage(ctx: Context) {
     const tgId = BigInt(ctx.from.id);
     const username = ctx.from.username ? `@${ctx.from.username}` : "Ник йўқ";
     const firstName = ctx.from.first_name;
-    const userText = ctx.message.text || "[Медиа/Расм юборди]";
+    
+    const userText = ctx.message.text || ctx.message.caption || "[Расм юборди]";
+
+    // 📸 Расм бор-йўқлигини текшириш ва линкини олиш (ортиқча дубликатларсиз)
+    let imageUrl: string | undefined = undefined;
+    if (ctx.message.photo) {
+      const photo = ctx.message.photo[ctx.message.photo.length - 1];
+      const file = await ctx.api.getFile(photo.file_id);
+      
+      imageUrl = `https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${file.file_path}`;
+      console.log(`[Vision] Расм линки олинди: ${imageUrl}`);
+    }
 
     let user = await prisma.user.findUnique({
       where: { telegramId: tgId },
@@ -97,7 +102,6 @@ export async function onMessage(ctx: Context) {
       });
     }
 
-    // 📩 ХАБАРНИ АДМИН ГУРУҲГА ЮБОРИШ
     const notificationText = `📩 Кимдан: ${firstName} (${username})\nID: ${tgId}\n\n📝 Хабар: ${userText}\n\nStatus: ${user.isPaused ? "🔴 Қўлда (AI ўчиқ)" : "🟢 AI бошқарувида"}`;
     await ctx.api.sendMessage(ADMIN_GROUP_ID, notificationText);
 
@@ -125,6 +129,7 @@ export async function onMessage(ctx: Context) {
     const dianaReply = await generateDianaResponse({
       systemPrompt,
       userMessage: userText,
+      imageUrl: imageUrl
     });
 
     await prisma.$transaction([
@@ -146,3 +151,4 @@ export async function onMessage(ctx: Context) {
     console.error("Handlers ичида хатолик:", error);
   }
 }
+
