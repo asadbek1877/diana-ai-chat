@@ -58,6 +58,14 @@ export async function generateDianaResponse(input: GenerateResponseInput): Promi
 
     const data = await response.json();
     const reply = data.choices[0]?.message?.content;
+    // ... (бошқа кодлар)
+const payload = {
+  model: "meta-llama/llama-3-70b-instruct", 
+  messages: messages,
+  temperature: 0.85, // 👈 Жонлироқ ва креатив чиқиши учун 0.85 қилдик
+  max_tokens: 400,   // 👈 Гапи узилиб қолмаслиги учун 400 га оширдик
+};
+// ...
     
     return reply ? reply.trim() : "Чё?";
   } catch (error: any) {

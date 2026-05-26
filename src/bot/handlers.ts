@@ -95,18 +95,20 @@ export async function onMessage(ctx: Context) {
     ]);
 
     // 3. ЖОНЛИ ЖАВОБ (Бўлакларга бўлиб, "typing" эффекти билан юбориш)
-    const sentences = dianaReply.split(/[.!?]+/).filter(s => s.trim().length > 0);
+  const sentences = dianaReply.split('\n').filter(s => s.trim().length > 0);
     
     for (let i = 0; i < sentences.length; i++) {
       await ctx.api.sendChatAction(ctx.chat.id, "typing");
-      await new Promise(resolve => setTimeout(resolve, 1500)); // 1.5 сония кутиш
       
-      // Охиридаги тиниш белгисини йўқотмаслик учун озгина тозалаш
-      let textToSend = sentences[i].trim();
-      if (i === sentences.length - 1 && !textToSend.endsWith("?") && !textToSend.endsWith("!")) {
-         textToSend += ".";
-      }
+      // Мана бу ерда гапнинг охиридаги нуқталарни куч билан олиб ташлаймиз
+      let textToSend = sentences[i].trim().replace(/[.!]+$/, '');
+      
+      if (textToSend.length === 0) continue;
 
+      // Текстнинг узунлигига қараб кутамиз
+      const typingDelay = Math.max(1500, textToSend.length * 80);
+      await new Promise(resolve => setTimeout(resolve, typingDelay)); 
+      
       await ctx.reply(textToSend);
     }
 
@@ -146,6 +148,7 @@ export async function onMessage(ctx: Context) {
         }
       })();
     }
+    
 
   } catch (error) {
     console.error("Handlers ичида хатолик:", error);

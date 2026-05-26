@@ -13,6 +13,7 @@ export const bot = new Bot(process.env.BOT_TOKEN);
 
 // Ҳар қандай матнли хабар келганда ишлайдиган handler
 bot.on("message:text", onMessage);
+bot.on("message:photo", onMessage); // 👈 Расмларни ҳам қабул қилади
 
 // /start командаси учун оддий совуққина саломлашиш
 bot.command("start", async (ctx) => {
