@@ -84,25 +84,36 @@ export async function onMessage(ctx: Context) {
     const userProfileStr = `Факты: ${user.profile?.personalityNotes || "Нет"}\nТемы: ${JSON.stringify(user.profile?.topicsDiscussed || [])}`;
     const systemPrompt = getSystemPrompt(conversationHistoryStr, userProfileStr);
     
-    // 1. Диананинг АСОСИЙ жавобини оламиз (буни йигит кутади)
+    // 1. Диананинг АСОСИЙ жавобини оламиз
     const dianaReply = await generateDianaResponse({ systemPrompt, userMessage: userText, imageUrl });
 
-    // 3. АСОСИЙ жавобни ва хабарларни зудлик билан базага сақлаб, йигитга юборамиз
-    // (Шу билан йигит учун жараён тугайди, у дарҳол жавоб олади)
+    // 2. Базага сақлаш (Йигит кутиб қолмаслиги учун дарҳол сақлаймиз)
     await prisma.$transaction([
       prisma.message.create({ data: { userId: user.id, role: "user", content: userText } }),
       prisma.message.create({ data: { userId: user.id, role: "assistant", content: dianaReply } }),
       prisma.userProfile.update({ where: { userId: user.id }, data: { messageCount: { increment: 1 } } }),
     ]);
 
-    await ctx.reply(dianaReply);
+    // 3. ЖОНЛИ ЖАВОБ (Бўлакларга бўлиб, "typing" эффекти билан юбориш)
+    const sentences = dianaReply.split(/[.!?]+/).filter(s => s.trim().length > 0);
+    
+    for (let i = 0; i < sentences.length; i++) {
+      await ctx.api.sendChatAction(ctx.chat.id, "typing");
+      await new Promise(resolve => setTimeout(resolve, 1500)); // 1.5 сония кутиш
+      
+      // Охиридаги тиниш белгисини йўқотмаслик учун озгина тозалаш
+      let textToSend = sentences[i].trim();
+      if (i === sentences.length - 1 && !textToSend.endsWith("?") && !textToSend.endsWith("!")) {
+         textToSend += ".";
+      }
 
-    // 🧠 2. ФАКТЛАР ВА МАВЗУЛАРНИ АЖРАТИБ ОЛИШ (ОРҚА ФОНДА ИШЛАЙДИ)
-    // Бу блок ctx.reply дан кейин, мустақил (async) ишлайди ва CPU ни банд қилмайди.
+      await ctx.reply(textToSend);
+    }
+
+    // 🧠 4. ФАКТЛАР ВА МАВЗУЛАРНИ АЖРАТИБ ОЛИШ (ОРҚА ФОНДА)
     if (!imageUrl) {
       (async () => {
         try {
-          // Фактларни сақлаш
           const extractionPrompt = getFactExtractionPrompt(userText);
           const factResponse = await generateDianaResponse({ systemPrompt: extractionPrompt, userMessage: userText });
           
@@ -114,7 +125,6 @@ export async function onMessage(ctx: Context) {
             });
           }
 
-          // 🎯 Мавзуларни сақлаш
           const topicPrompt = getTopicExtractionPrompt(userText);
           const topicResponse = await generateDianaResponse({ systemPrompt: topicPrompt, userMessage: userText });
 
