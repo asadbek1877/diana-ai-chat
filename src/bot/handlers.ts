@@ -2,7 +2,6 @@ import { Context } from "grammy";
 import { PrismaClient, Prisma } from "@prisma/client";
 import { Pool } from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
-// Учала функция ҳам импорт қилинди:
 import { getSystemPrompt, getFactExtractionPrompt, getTopicExtractionPrompt } from "../ai/prompt";
 import { generateDianaResponse } from "../ai/openrouter";
 import { simulateHumanBehavior } from "./simulation";
@@ -85,43 +84,11 @@ export async function onMessage(ctx: Context) {
     const userProfileStr = `Факты: ${user.profile?.personalityNotes || "Нет"}\nТемы: ${JSON.stringify(user.profile?.topicsDiscussed || [])}`;
     const systemPrompt = getSystemPrompt(conversationHistoryStr, userProfileStr);
     
-    // 1. Диананинг жавобини оламиз
+    // 1. Диананинг АСОСИЙ жавобини оламиз (буни йигит кутади)
     const dianaReply = await generateDianaResponse({ systemPrompt, userMessage: userText, imageUrl });
 
-    // 🧠 2. ФАКТЛАР ВА МАВЗУЛАРНИ АЖРАТИБ ОЛИШ
-    if (!imageUrl) {
-      // Фактларни сақлаш
-      const extractionPrompt = getFactExtractionPrompt(userText);
-      const factResponse = await generateDianaResponse({ systemPrompt: extractionPrompt, userMessage: userText });
-      
-      if (factResponse && factResponse.trim() !== "ЙЎҚ" && !factResponse.includes("Чё")) {
-        console.log(`[Memory] Янги факт топилди: ${factResponse.trim()}`);
-        await prisma.userProfile.update({
-          where: { userId: user.id },
-          data: { personalityNotes: (user.profile?.personalityNotes || "") + "\n- " + factResponse.trim() }
-        });
-      }
-
-      // 🎯 Мавзуларни сақлаш
-      const topicPrompt = getTopicExtractionPrompt(userText);
-      const topicResponse = await generateDianaResponse({ systemPrompt: topicPrompt, userMessage: userText });
-
-      if (topicResponse && topicResponse.trim() !== "ЙЎҚ" && !topicResponse.includes("Чё")) {
-        const cleanTopic = topicResponse.trim().replace(/[^a-zA-Zа-яА-ЯёЁ]/g, ""); // Фақат ҳарфларни қолдирамиз
-        if (cleanTopic.length > 2) {
-          const currentTopics = (user.profile?.topicsDiscussed as string[]) || [];
-          if (!currentTopics.includes(cleanTopic)) {
-            console.log(`[Topic] Янги мавзу қўшилди: ${cleanTopic}`);
-            await prisma.userProfile.update({
-              where: { userId: user.id },
-              data: { topicsDiscussed: [...currentTopics, cleanTopic] as Prisma.InputJsonValue }
-            });
-          }
-        }
-      }
-    }
-
-    // 3. Базага сақлаш
+    // 3. АСОСИЙ жавобни ва хабарларни зудлик билан базага сақлаб, йигитга юборамиз
+    // (Шу билан йигит учун жараён тугайди, у дарҳол жавоб олади)
     await prisma.$transaction([
       prisma.message.create({ data: { userId: user.id, role: "user", content: userText } }),
       prisma.message.create({ data: { userId: user.id, role: "assistant", content: dianaReply } }),
@@ -130,8 +97,47 @@ export async function onMessage(ctx: Context) {
 
     await ctx.reply(dianaReply);
 
+    // 🧠 2. ФАКТЛАР ВА МАВЗУЛАРНИ АЖРАТИБ ОЛИШ (ОРҚА ФОНДА ИШЛАЙДИ)
+    // Бу блок ctx.reply дан кейин, мустақил (async) ишлайди ва CPU ни банд қилмайди.
+    if (!imageUrl) {
+      (async () => {
+        try {
+          // Фактларни сақлаш
+          const extractionPrompt = getFactExtractionPrompt(userText);
+          const factResponse = await generateDianaResponse({ systemPrompt: extractionPrompt, userMessage: userText });
+          
+          if (factResponse && factResponse.trim() !== "ЙЎҚ" && !factResponse.includes("Чё")) {
+            console.log(`[Memory] Янги факт топилди: ${factResponse.trim()}`);
+            await prisma.userProfile.update({
+              where: { userId: user.id },
+              data: { personalityNotes: (user.profile?.personalityNotes || "") + "\n- " + factResponse.trim() }
+            });
+          }
+
+          // 🎯 Мавзуларни сақлаш
+          const topicPrompt = getTopicExtractionPrompt(userText);
+          const topicResponse = await generateDianaResponse({ systemPrompt: topicPrompt, userMessage: userText });
+
+          if (topicResponse && topicResponse.trim() !== "ЙЎҚ" && !topicResponse.includes("Чё")) {
+            const cleanTopic = topicResponse.trim().replace(/[^a-zA-Zа-яА-ЯёЁ]/g, "");
+            if (cleanTopic.length > 2) {
+              const currentTopics = (user.profile?.topicsDiscussed as string[]) || [];
+              if (!currentTopics.includes(cleanTopic)) {
+                console.log(`[Topic] Янги мавзу қўшилди: ${cleanTopic}`);
+                await prisma.userProfile.update({
+                  where: { userId: user.id },
+                  data: { topicsDiscussed: [...currentTopics, cleanTopic] as Prisma.InputJsonValue }
+                });
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Орқа фонда факт йиғишда хатолик:", err);
+        }
+      })();
+    }
+
   } catch (error) {
     console.error("Handlers ичида хатолик:", error);
   }
 }
-
