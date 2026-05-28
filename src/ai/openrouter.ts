@@ -19,7 +19,7 @@ export async function askDiana(userMessage: string, chatHistory: any[] = []) {
       },
       body: JSON.stringify({
         // Проверенная бесплатная модель, которая работает стабильно
-        model: "meta-llama/llama-3-8b-instruct:free", 
+        model: "mistralai/mistral-7b-instruct:free", 
         messages: [
           { role: "system", content: getDianaPrompt() },
           ...formattedHistory,
