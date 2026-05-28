@@ -6,8 +6,8 @@ import { Pool } from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
 import dotenv from "dotenv";
 
-import { getSystemPrompt } from "../ai/prompt";
-import { generateDianaResponse } from "../ai/openrouter";
+// 🛠 ТОЗАЛАНГАН ИМПОРТ: Янги openrouter.ts файлимиздаги askDiana функциясини улаймиз
+import { askDiana } from "../ai/openrouter"; 
 
 dotenv.config();
 
@@ -24,7 +24,7 @@ const client = new TelegramClient(sessionString, apiId, apiHash, {
 
 const userMessageQueues = new Map<bigint, { texts: string[], messageIds: number[], timer: NodeJS.Timeout, sender: any, chatId: any }>();
 
-// 🛠 2-ҚАДАМ: AI текстини реал одамникига ўхшатиб бузиш (MIDDLEWARE)
+// 🛠 AI ТЕКСТИНИ РЕАЛ ОДАМНИКИГА ЎХШАТИБ БУЗИШ (MIDDLEWARE)
 function formatDianaText(text: string): string {
   let t = text.trim();
   
@@ -89,17 +89,14 @@ async function processUserQueue(tgId: bigint) {
     // @ts-ignore
     await client.invoke(new Api.messages.SetTyping({ peer: chatId, action: new Api.SendMessageTypingAction() }));
 
-    // 2. AI дан жавоб олиш
+    // 2. Базадан охирги 10 та хабарни оламиз (ИИ хотираси учун)
     const recentMessages = await prisma.message.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" }, take: 10 });
     const reversedMessages = [...recentMessages].reverse();
-    const conversationHistoryStr = reversedMessages.map((m) => `${m.role === "user" ? "Йигит" : "Диана"}: ${m.content}`).join("\n");
 
-    const userProfileStr = `Факты: ${user.profile?.personalityNotes || "Нет"}\nТемы: ${JSON.stringify(user.profile?.topicsDiscussed || [])}`;
-    const systemPrompt = getSystemPrompt(conversationHistoryStr, userProfileStr);
+    // 🚀 ТЎҒРИЛАНГАН ЖОЙИ: askDiana функциясига янги хабар ва базадаги тарихни тўғри узатамиз
+    let dianaReply = await askDiana(combinedUserText, reversedMessages);
 
-    let dianaReply = await generateDianaResponse({ systemPrompt, userMessage: combinedUserText });
-
-    // 🚀 ФИЛЬТРДАН ЎТКАЗАМИЗ (Сиз айтган жой шу ерда ишга тушади)
+    // 🚀 ФИЛЬТРДАН ЎТКАЗАМИЗ
     dianaReply = formatDianaText(dianaReply);
 
     // 3. ЛАЙК БОСИШ МАНТИҒИ
@@ -131,7 +128,7 @@ async function processUserQueue(tgId: bigint) {
     }
 
     // 4. Хабарни юбориш
-    const sentences = dianaReply.split('\n\n').filter(s => s.trim().length > 0); 
+    const sentences = dianaReply.split('\n\n').filter((s: string) => s.trim().length > 0); 
     
     for (let i = 0; i < sentences.length; i++) {
       let textToSend = sentences[i].trim();
@@ -152,10 +149,6 @@ async function processUserQueue(tgId: bigint) {
     // Оффлайн бўлиш
     await client.invoke(new Api.account.UpdateStatus({ offline: true }));
 
-    // ИЗОҲ: ФАКТЛАРНИ ЙИҒИШ ҚИСМИ 
-    // Бу ерда сизда орқа фонда AI факт йиғадиган функциянгиз чақирилар эди. 
-    // Ўша кодингиз турсин, мен қисқароқ бўлиши учун бу ерга ёзмадим.
-
   } catch (err) {
     console.error("Хатолик юз берди:", err);
   }
@@ -166,7 +159,6 @@ async function startUserbot() {
   await client.connect();
   console.log("✅ Диана (Реал профиль) АҚЛЛИ МИЯГА уланди ва ишлашга тайёр!");
   
-  // Энг камида уланганини билиш учун ўз-ўзимизга хабар юбориб кўрамиз
   await client.sendMessage("me", { message: "Диана серверда уйғонди! 🚀" });
 
   client.addEventHandler(async (event: NewMessageEvent) => {

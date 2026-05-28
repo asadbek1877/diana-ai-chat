@@ -2,8 +2,7 @@ import { Context } from "grammy";
 import { PrismaClient, Prisma } from "@prisma/client";
 import { Pool } from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { getSystemPrompt, getFactExtractionPrompt, getTopicExtractionPrompt } from "../ai/prompt";
-import { generateDianaResponse } from "../ai/openrouter";
+import { askDiana } from "../ai/openrouter";
 import { simulateHumanBehavior } from "./simulation";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL as string });
@@ -79,13 +78,9 @@ export async function onMessage(ctx: Context) {
 
     const recentMessages = await prisma.message.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" }, take: 12 });
     const reversedMessages = [...recentMessages].reverse();
-    const conversationHistoryStr = reversedMessages.map((m) => `${m.role === "user" ? "Йигит" : "Диана"}: ${m.content}`).join("\n");
-
-    const userProfileStr = `Факты: ${user.profile?.personalityNotes || "Нет"}\nТемы: ${JSON.stringify(user.profile?.topicsDiscussed || [])}`;
-    const systemPrompt = getSystemPrompt(conversationHistoryStr, userProfileStr);
     
     // 1. Диананинг АСОСИЙ жавобини оламиз
-    const dianaReply = await generateDianaResponse({ systemPrompt, userMessage: userText, imageUrl });
+    const dianaReply = await askDiana(userText, reversedMessages);
 
     // 2. Базага сақлаш (Йигит кутиб қолмаслиги учун дарҳол сақлаймиз)
     await prisma.$transaction([
@@ -95,7 +90,7 @@ export async function onMessage(ctx: Context) {
     ]);
 
     // 3. ЖОНЛИ ЖАВОБ (Бўлакларга бўлиб, "typing" эффекти билан юбориш)
-  const sentences = dianaReply.split('\n').filter(s => s.trim().length > 0);
+  const sentences = dianaReply.split('\n').filter((s: string) => s.trim().length > 0);
     
     for (let i = 0; i < sentences.length; i++) {
       await ctx.api.sendChatAction(ctx.chat.id, "typing");
@@ -112,43 +107,18 @@ export async function onMessage(ctx: Context) {
       await ctx.reply(textToSend);
     }
 
-    // 🧠 4. ФАКТЛАР ВА МАВЗУЛАРНИ АЖРАТИБ ОЛИШ (ОРҚА ФОНДА)
+    // 🧠 4. ФАКТЛАР ВА МАВЗУЛАРНИ АЖРАТИБ ОЛИШ ВАҚТИНЧА ЎЧИРИЛДИ
+    /*
     if (!imageUrl) {
       (async () => {
         try {
-          const extractionPrompt = getFactExtractionPrompt(userText);
-          const factResponse = await generateDianaResponse({ systemPrompt: extractionPrompt, userMessage: userText });
-          
-          if (factResponse && factResponse.trim() !== "ЙЎҚ" && !factResponse.includes("Чё")) {
-            console.log(`[Memory] Янги факт топилди: ${factResponse.trim()}`);
-            await prisma.userProfile.update({
-              where: { userId: user.id },
-              data: { personalityNotes: (user.profile?.personalityNotes || "") + "\n- " + factResponse.trim() }
-            });
-          }
-
-          const topicPrompt = getTopicExtractionPrompt(userText);
-          const topicResponse = await generateDianaResponse({ systemPrompt: topicPrompt, userMessage: userText });
-
-          if (topicResponse && topicResponse.trim() !== "ЙЎҚ" && !topicResponse.includes("Чё")) {
-            const cleanTopic = topicResponse.trim().replace(/[^a-zA-Zа-яА-ЯёЁ]/g, "");
-            if (cleanTopic.length > 2) {
-              const currentTopics = (user.profile?.topicsDiscussed as string[]) || [];
-              if (!currentTopics.includes(cleanTopic)) {
-                console.log(`[Topic] Янги мавзу қўшилди: ${cleanTopic}`);
-                await prisma.userProfile.update({
-                  where: { userId: user.id },
-                  data: { topicsDiscussed: [...currentTopics, cleanTopic] as Prisma.InputJsonValue }
-                });
-              }
-            }
-          }
+          // extraction logics
         } catch (err) {
           console.error("Орқа фонда факт йиғишда хатолик:", err);
         }
       })();
     }
-    
+    */
 
   } catch (error) {
     console.error("Handlers ичида хатолик:", error);

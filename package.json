@@ -14,6 +14,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.9.1",
+    "@types/node-fetch": "^2.6.13",
     "@types/pg": "^8.20.0",
     "nodemon": "^3.1.14",
     "prisma": "^7.8.0",
@@ -25,7 +26,6 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "userbot": "ts-node src/userbot/index.ts"    
+    "userbot": "ts-node src/userbot/index.ts"
   }
-  
 }
