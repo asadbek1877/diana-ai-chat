@@ -17,7 +17,7 @@ export async function askDiana(userMessage: string, chatHistory: any[] = []) {
       },
       body: JSON.stringify({
         // OpenRouter-даги энг зўр ва ақлли текин Хитой модели
-        model: "qwen/qwen-2-7b-instruct:free", 
+        model: "deepseek/deepseek-chat:free", 
         messages: [
           { role: "system", content: getDianaPrompt() },
           ...formattedHistory,
