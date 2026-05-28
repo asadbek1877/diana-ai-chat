@@ -1,5 +1,7 @@
 import fetch from "node-fetch";
 import { getDianaPrompt } from "./prompt";
+import dotenv from "dotenv"; // 🔴 ШУ ҚАТОРНИ ҚЎШ
+
 
 export async function askDiana(userMessage: string, chatHistory: any[] = []) {
   try {
@@ -28,6 +30,8 @@ export async function askDiana(userMessage: string, chatHistory: any[] = []) {
       }),
     });
 
+    
+
     const data: any = await response.json();
     
     // Выводим ответ сервера в консоль рендера, чтобы ты видел, если что-то не так
@@ -42,9 +46,12 @@ export async function askDiana(userMessage: string, chatHistory: any[] = []) {
       return `ошибка от сервера: ${data.error.message || "без описания"}`;
     }
     
+    dotenv.config(); // 🔴 ШУ ҚАТОРНИ ҲАМ ҚЎШ
+    
     return "хз, че-то сервер завис";
   } catch (error: any) {
     console.error("OpenRouter Error:", error);
     return `сорян, упали в catch: ${error.message}`;
   }
+  
 }
