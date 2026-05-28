@@ -22,6 +22,17 @@ async function startApp() {
 process.once('SIGINT', () => bot.stop());
 process.once('SIGTERM', () => bot.stop());
 
+import http from "http";
+
+// 🛠 RENDER'НИ АЛДАШ УЧУН СОХТА ВЕБ-СЕРВЕР (Порт очиш)
+const PORT = process.env.PORT || 3000;
+http.createServer((req, res) => {
+  res.writeHead(200, { "Content-Type": "text/plain" });
+  res.end("Diana is alive!\n");
+}).listen(PORT, () => {
+  console.log(`[System] Сохта веб-сервер ${PORT}-портда ишга тушди.`);
+});
+
 
 // 🛠 MIDDLEWARE: AI текстини реал одамникига ўхшатиб бузиш
 export function formatDianaText(text: string): string {
@@ -47,6 +58,7 @@ export function formatDianaText(text: string): string {
   
   return t;
 }
+
 
 startApp();
 
