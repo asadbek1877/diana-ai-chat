@@ -1,4 +1,5 @@
 import { bot } from "./bot";
+import "./userbot/index";
 
 async function startApp() {
   try {
@@ -32,6 +33,7 @@ http.createServer((req, res) => {
 }).listen(PORT, () => {
   console.log(`[System] Сохта веб-сервер ${PORT}-портда ишга тушди.`);
 });
+
 
 
 // 🛠 MIDDLEWARE: AI текстини реал одамникига ўхшатиб бузиш
