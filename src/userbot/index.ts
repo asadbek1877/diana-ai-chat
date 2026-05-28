@@ -18,7 +18,6 @@ const prisma = new PrismaClient({ adapter });
 const apiId = Number(process.env.API_ID);
 const apiHash = process.env.API_HASH as string;
 const sessionString = new StringSession(process.env.SESSION_STRING || "");
-
 const client = new TelegramClient(sessionString, apiId, apiHash, {
   connectionRetries: 5,
 });
@@ -163,8 +162,12 @@ async function processUserQueue(tgId: bigint) {
 }
 
 async function startUserbot() {
+  console.log("[System] Юзербот Телеграмга уланмоқда...");
   await client.connect();
   console.log("✅ Диана (Реал профиль) АҚЛЛИ МИЯГА уланди ва ишлашга тайёр!");
+  
+  // Энг камида уланганини билиш учун ўз-ўзимизга хабар юбориб кўрамиз
+  await client.sendMessage("me", { message: "Диана серверда уйғонди! 🚀" });
 
   client.addEventHandler(async (event: NewMessageEvent) => {
     const message = event.message;
