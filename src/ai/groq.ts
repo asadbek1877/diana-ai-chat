@@ -9,19 +9,60 @@ type ChatHistoryItem = {
   content: string;
 };
 
+type GroqUsage = {
+  total_tokens?: number;
+};
+
+type GroqResponse = {
+  choices?: Array<{
+    message?: {
+      content?: string;
+    };
+  }>;
+  usage?: GroqUsage;
+  error?: {
+    message?: string;
+  };
+};
+
 const GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
 const FALLBACK_MODEL = "llama-3.1-8b-instant";
 
-export async function askDiana(userMessage: string, chatHistory: ChatHistoryItem[] = []) {
+function normalizeTelegramId(userId: string) {
+  const trimmedUserId = userId.trim();
+
+  if (!trimmedUserId) {
+    throw new Error("userId is empty");
+  }
+
+  return BigInt(trimmedUserId);
+}
+
+function extractAssistantText(data: GroqResponse) {
+  const content = data.choices?.[0]?.message?.content;
+
+  if (typeof content === "string" && content.trim().length > 0) {
+    return content;
+  }
+
+  return "хз, че-то сервер завис";
+}
+
+export async function askDiana(userId: string, userMessage: string, chatHistory: ChatHistoryItem[] = []) {
   try {
-    const settings = await prisma.settings.findFirst();
+    const telegramId = normalizeTelegramId(userId);
+
+    const [user, settings] = await Promise.all([
+      prisma.user.findUnique({ where: { telegramId } }),
+      prisma.settings.findFirst(),
+    ]);
 
     if (settings?.isBotActive === false) {
       return "Я сейчас сплю 😴 (Админ меня временно отключил)";
     }
 
-    const model = settings?.currentModel?.trim() || FALLBACK_MODEL;
-    const systemPrompt = settings?.systemPrompt?.trim() || getDianaPrompt();
+    const modelToUse = user?.personalModel?.trim() || settings?.currentModel?.trim() || FALLBACK_MODEL;
+    const promptToUse = user?.personalPrompt?.trim() || settings?.systemPrompt?.trim() || getDianaPrompt();
     const apiKey = process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY;
 
     if (!apiKey) {
@@ -35,9 +76,9 @@ export async function askDiana(userMessage: string, chatHistory: ChatHistoryItem
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model,
+        model: modelToUse,
         messages: [
-          { role: "system", content: systemPrompt },
+          { role: "system", content: promptToUse },
           ...chatHistory.map((message) => ({
             role: message.role === "assistant" || message.role === "diana" ? "assistant" : "user",
             content: message.content,
@@ -49,7 +90,7 @@ export async function askDiana(userMessage: string, chatHistory: ChatHistoryItem
     });
 
     const rawBody = await response.text();
-    let data: any = {};
+    let data: GroqResponse = {};
 
     try {
       data = rawBody ? JSON.parse(rawBody) : {};
@@ -64,16 +105,29 @@ export async function askDiana(userMessage: string, chatHistory: ChatHistoryItem
       throw new Error(errorMessage);
     }
 
-    const content = data?.choices?.[0]?.message?.content;
+    const content = extractAssistantText(data);
 
-    if (typeof content === "string" && content.trim().length > 0) {
-      return content;
+    const tokensUsed = Number(data.usage?.total_tokens || 0);
+
+    if (Number.isFinite(tokensUsed) && tokensUsed > 0 && user) {
+      try {
+        await prisma.user.update({
+          where: { telegramId },
+          data: {
+            tokensUsed: {
+              increment: tokensUsed,
+            },
+          },
+        });
+      } catch (updateError) {
+        console.error("Детальная ошибка:", updateError);
+      }
     }
 
-    return "хз, че-то сервер завис";
+    return content;
   } catch (error) {
-    const message = error instanceof Error ? error.message : "unknown error";
     console.error("Детальная ошибка:", error);
+    const message = error instanceof Error ? error.message : "unknown error";
     return `сорян, упали в catch: ${message}`;
   }
 }
