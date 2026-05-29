@@ -3,7 +3,9 @@ import { PrismaClient, Prisma } from "@prisma/client";
 import { Pool } from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { askDiana } from "../ai/openrouter";
+import { ensureUserExists, handleUserMessage } from "../logger/chatLogger";
 import { simulateHumanBehavior } from "./simulation";
+import { bot } from "./index";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL as string });
 const adapter = new PrismaPg(pool);
@@ -56,17 +58,16 @@ export async function onMessage(ctx: Context) {
       imageUrl = `https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${file.file_path}`;
     }
 
-    let user = await prisma.user.findUnique({ where: { telegramId: tgId }, include: { profile: true } });
+    // Используем новый модуль логирования для создания/получения пользователя
+    let user = await ensureUserExists(tgId, firstName, ctx.from.username);
 
     if (!user) {
-      user = await prisma.user.create({
-        data: {
-          telegramId: tgId, username: ctx.from.username || null, firstName, platform: "TELEGRAM",
-          profile: { create: { topicsDiscussed: [] as Prisma.InputJsonValue, personalityNotes: "" } },
-        },
-        include: { profile: true },
-      });
+      console.error("Не удалось создать/получить пользователя");
+      return;
     }
+
+    // Получаем полные данные пользователя с профилем
+    user = await prisma.user.findUnique({ where: { id: user.id }, include: { profile: true } }) || user;
 
     const notificationText = `📩 Кимдан: ${firstName} (${username})\nID: ${tgId}\n📝 Хабар: ${userText}`;
     await ctx.api.sendMessage(ADMIN_GROUP_ID, notificationText);
@@ -88,6 +89,15 @@ export async function onMessage(ctx: Context) {
       prisma.message.create({ data: { userId: user.id, role: "assistant", content: dianaReply } }),
       prisma.userProfile.update({ where: { userId: user.id }, data: { messageCount: { increment: 1 } } }),
     ]);
+
+    // 2.5. Отправляем уведомление администратору (используя новый модуль логирования)
+    (async () => {
+      try {
+        await handleUserMessage(ctx, userText, dianaReply, bot);
+      } catch (err) {
+        console.error("Ошибка при отправке уведомления администратору:", err);
+      }
+    })();
 
     // 3. ЖОНЛИ ЖАВОБ (Бўлакларга бўлиб, "typing" эффекти билан юбориш)
   const sentences = dianaReply.split('\n').filter((s: string) => s.trim().length > 0);
@@ -123,4 +133,5 @@ export async function onMessage(ctx: Context) {
   } catch (error) {
     console.error("Handlers ичида хатолик:", error);
   }
+  
 }

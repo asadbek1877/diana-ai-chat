@@ -1,46 +1,74 @@
-datasource db {
-  provider = "postgresql"
-}
-
 generator client {
   provider = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
 }
 
-// 1. Фойдаланувчилар жадвали
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL") // 👈 МАНА ШУ ҚАТОР ЕТИШМАЯПТИ
+}
+
+model Settings {
+  id           Int      @id @default(1)
+  currentModel String   @default("llama-3.1-8b-instant")
+  systemPrompt String   @db.Text
+  isBotActive  Boolean  @default(true)
+  updatedAt    DateTime @updatedAt
+}
+
 model User {
   id         String   @id @default(uuid())
   telegramId BigInt   @unique
   username   String?
   firstName  String?
+
   platform   String   @default("TELEGRAM")
   isPaused   Boolean  @default(false)
+  isBlocked  Boolean  @default(false)
+
   createdAt  DateTime @default(now())
   lastSeen   DateTime @updatedAt
 
-  // Муносабатлар
   messages   Message[]
   profile    UserProfile?
+
+  @@index([telegramId])
 }
 
-// 2. Диалоглар тарихи жадвали
 model Message {
   id        String   @id @default(uuid())
   userId    String
-  role      String   
+
+  role      String
   content   String   @db.Text
+
   createdAt DateTime @default(now())
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
-// 3. Юзернинг психологик профайли
+model ChatLog {
+  id         String   @id @default(uuid())
+  telegramId BigInt
+  role       String
+  content    String   @db.Text
+  createdAt  DateTime @default(now())
+
+  @@index([telegramId])
+}
+
 model UserProfile {
   id               String   @id @default(uuid())
   userId           String   @unique
-  topicsDiscussed  Json     
-  personalityNotes String   @db.Text 
+
+  topicsDiscussed  Json
+  personalityNotes String   @db.Text
+
   messageCount     Int      @default(0)
+
   updatedAt        DateTime @updatedAt
 
-  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user             User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

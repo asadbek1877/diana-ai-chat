@@ -48,6 +48,8 @@ function formatDianaText(text: string): string {
   return t;
 }
 
+
+
 async function processUserQueue(tgId: bigint) {
   const queue = userMessageQueues.get(tgId);
   if (!queue) return;
