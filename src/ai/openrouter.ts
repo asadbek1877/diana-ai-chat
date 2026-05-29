@@ -20,7 +20,7 @@ export async function askDiana(userMessage: string, chatHistory: any[] = []) {
       },
       body: JSON.stringify({
         // Llama-3'нинг энг тезкор 8B модели
-        model: "llama3-8b-8192", 
+        model: "llama-3.1-8b-instant", 
         messages: [
           { role: "system", content: getDianaPrompt() },
           ...formattedHistory,
