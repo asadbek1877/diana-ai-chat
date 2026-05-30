@@ -532,7 +532,7 @@ async function startApp() {
       // 🧹 1. ТЕЛЕГРАМНИ ТОЗАЛАШ
       // ВАҚТИНЧА ЎЧИРИБ ҚЎЙИЛДИ: Локалда без VPN ишлаганда краш бўлмаслиги учун. 
       // Агар серверга (Render) юкласангиз, бу комментни олиб ташлашингиз мумкин.
-      // await bot.api.deleteWebhook({ drop_pending_updates: true });
+      await bot.api.deleteWebhook({ drop_pending_updates: true });
       console.log("[System] Webhook текшируви ўтказиб юборилди!");
 
       // 2. Менюни ўрнатиш
