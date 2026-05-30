@@ -35,7 +35,7 @@ export async function askDiana(userMessage: string, chatHistory: any[] = []) {
 
     // 🚀 ИСПОЛЬЗУЕМ МОДЕЛЬ И ПРОМПТ ИЗ БД (или дефолтные)
     const systemPrompt = settings?.systemPrompt || getDianaPrompt();
-    const model = settings?.currentModel || "deepseek/deepseek-chat:free";
+    const model = settings?.currentModel || "meta-llama/llama-3-8b-instruct";
 
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",

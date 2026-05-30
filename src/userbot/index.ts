@@ -108,11 +108,24 @@ async function processUserQueue(tgId: bigint) {
       dianaReply = dianaReply.replace("[LIKE]", "").trim(); 
     }
 
-    // Сақлаш
+    // 🚀 ТЎҒРИЛАНГАН ВА ХАТОСИЗ TRANSACTION
     await prisma.$transaction([
-      prisma.message.create({ data: { userId: user.id, role: "user", content: combinedUserText } }),
-      prisma.message.create({ data: { userId: user.id, role: "assistant", content: dianaReply } }),
-      prisma.userProfile.update({ where: { userId: user.id }, data: { messageCount: { increment: 1 } } }),
+      prisma.message.create({ 
+        data: { userId: user.id, role: "user", content: combinedUserText } 
+      }),
+      prisma.message.create({ 
+        data: { userId: user.id, role: "assistant", content: dianaReply } 
+      }),
+      prisma.userProfile.upsert({
+        where: { userId: user.id },
+        update: { messageCount: { increment: 1 } },
+        create: { 
+          userId: user.id, 
+          messageCount: 1, 
+          topicsDiscussed: [],
+          personalityNotes: ""
+        }
+      }),
     ]);
 
     // Агар [LIKE] теги бўлса, ҳақиқий реакция босамиз

@@ -533,7 +533,7 @@ async function startApp() {
       // ВАҚТИНЧА ЎЧИРИБ ҚЎЙИЛДИ: Локалда без VPN ишлаганда краш бўлмаслиги учун. 
       // Агар серверга (Render) юкласангиз, бу комментни олиб ташлашингиз мумкин.
       await bot.api.deleteWebhook({ drop_pending_updates: true });
-      console.log("[System] Webhook текшируви ўтказиб юборилди!");
+      console.log("[System] Webhook ва эски хабарлар тозаланди!");
 
       // 2. Менюни ўрнатиш
       await bot.api.setMyCommands([
