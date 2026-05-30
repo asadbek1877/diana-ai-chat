@@ -40,32 +40,26 @@ export class UserRepository {
   }
 
   async ensureUser(input: UpsertUserInput) {
-    const existingUser = await this.findByTelegramId(input.telegramId);
-
-    if (existingUser) {
-      return existingUser;
-    }
-
-    return prisma.user.create({
-      data: {
+    return prisma.user.upsert({
+      where: { telegramId: input.telegramId },
+      create: {
         telegramId: input.telegramId,
         username: input.username ?? null,
         firstName: input.firstName ?? "Unknown",
         platform: input.platform ?? "TELEGRAM",
         isBlocked: false,
       },
+      update: {
+        username: input.username ?? null,
+        firstName: input.firstName ?? "Unknown",
+      },
     });
   }
 
   async ensureUserWithProfile(input: UpsertUserInput) {
-    const existingUser = await this.findByTelegramId(input.telegramId, true);
-
-    if (existingUser) {
-      return existingUser;
-    }
-
-    return prisma.user.create({
-      data: {
+    return prisma.user.upsert({
+      where: { telegramId: input.telegramId },
+      create: {
         telegramId: input.telegramId,
         username: input.username ?? null,
         firstName: input.firstName ?? null,
@@ -74,6 +68,19 @@ export class UserRepository {
           create: {
             topicsDiscussed: [] as Prisma.InputJsonValue,
             personalityNotes: "",
+          },
+        },
+      },
+      update: {
+        username: input.username ?? null,
+        firstName: input.firstName ?? null,
+        profile: {
+          upsert: {
+            create: {
+              topicsDiscussed: [] as Prisma.InputJsonValue,
+              personalityNotes: "",
+            },
+            update: {},
           },
         },
       },

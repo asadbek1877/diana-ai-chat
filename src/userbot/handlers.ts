@@ -14,6 +14,14 @@ type TelegramSender = {
   username?: unknown;
 };
 
+type RateLimiter = {
+  isLimited(userId: string | number | bigint): boolean;
+};
+
+type RegisterUserbotHandlersOptions = {
+  incomingMessageLimiter: RateLimiter;
+};
+
 function hasSenderInfo(value: unknown): value is TelegramSender {
   return typeof value === "object" && value !== null;
 }
@@ -159,11 +167,15 @@ async function processUserQueue(queueManager: UserMessageQueue, telegramId: bigi
     await userbotClient.invoke(new Api.account.UpdateStatus({ offline: true }));
   } catch (error) {
     console.error("[Userbot] Failed to process message:", error);
+  } finally {
+    queueManager.clear(telegramId);
   }
 }
 
-export function registerUserbotHandlers() {
-  const queueManager = new UserMessageQueue((telegramId) => void processUserQueue(queueManager, telegramId));
+export function registerUserbotHandlers(options: RegisterUserbotHandlersOptions) {
+  const queueManager = new UserMessageQueue(async (telegramId) => {
+    await processUserQueue(queueManager, telegramId);
+  });
 
   userbotClient.addEventHandler(async (event: NewMessageEvent) => {
     const message = event.message;
@@ -174,6 +186,7 @@ export function registerUserbotHandlers() {
     const sender = normalizeSender(await message.getSender());
     const chatId = normalizeChatId(message.chatId);
     if (!sender || chatId === null) return;
+    if (options.incomingMessageLimiter.isLimited(sender.id)) return;
 
     queueManager.enqueue({
       telegramId: sender.id,

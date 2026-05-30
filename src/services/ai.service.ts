@@ -54,15 +54,14 @@ class AIService {
       return response.content;
     } catch (error) {
       console.error("AI service error:", error);
-      const message = error instanceof Error ? error.message : "unknown error";
-      return `Sorry, the AI request failed: ${message}`;
+      return "Извините, произошла ошибка";
     }
   }
 
   private getApiKey(providerName: ProviderName) {
     const apiKey =
       providerName === "groq"
-        ? env.GROQ_API_KEY || env.OPENAI_API_KEY
+        ? env.GROQ_API_KEY
         : env.OPENROUTER_API_KEY;
 
     if (!apiKey) {

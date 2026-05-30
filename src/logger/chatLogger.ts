@@ -5,6 +5,15 @@ import { userRepo } from "../database/repositories/user.repo";
 
 const ADMIN_ID = env.ADMIN_ID;
 
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 export async function ensureUserExists(
   telegramId: bigint | string,
   firstName?: string,
@@ -49,24 +58,22 @@ export async function notifyAdmin(
   }
 ) {
   try {
-    const notificationText = `
-📩 **НОВОЕ СООБЩЕНИЕ**
-
-👤 Пользователь: ${userInfo.firstName || "Unknown"} (@${userInfo.username || "no_username"})
-🆔 ID: \`${userInfo.telegramId}\`
-
-💬 **Сказал:**
-\`\`\`
-${userMessage.substring(0, 200)}${userMessage.length > 200 ? "..." : ""}
-\`\`\`
-
-🤖 **Диана ответила:**
-\`\`\`
-${botResponse.substring(0, 200)}${botResponse.length > 200 ? "..." : ""}
-\`\`\`
-
-⏰ Время: ${new Date().toLocaleString("ru-RU")}
-    `;
+    const userMessagePreview = userMessage.substring(0, 200);
+    const botResponsePreview = botResponse.substring(0, 200);
+    const notificationText = [
+      "<b>Новое сообщение</b>",
+      "",
+      `Пользователь: ${escapeHtml(userInfo.firstName || "Unknown")} (@${escapeHtml(userInfo.username || "no_username")})`,
+      `ID: <code>${escapeHtml(userInfo.telegramId)}</code>`,
+      "",
+      "Сказал:",
+      `<pre>${escapeHtml(userMessagePreview)}${userMessage.length > 200 ? "..." : ""}</pre>`,
+      "",
+      "Диана ответила:",
+      `<pre>${escapeHtml(botResponsePreview)}${botResponse.length > 200 ? "..." : ""}</pre>`,
+      "",
+      `Время: ${escapeHtml(new Date().toLocaleString("ru-RU"))}`,
+    ].join("\n");
 
     await bot.api.sendMessage(ADMIN_ID, notificationText, {
       parse_mode: "HTML",
@@ -126,7 +133,7 @@ export async function clearUserChatHistory(userId: string) {
     const result = await messageRepo.deleteByUserId(userId);
     return result.count;
   } catch (error) {
-    console.error("Error clearing chat history:", error);
+    console.error("Error clearing user chat history:", error);
     return 0;
   }
 }

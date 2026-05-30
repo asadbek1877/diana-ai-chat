@@ -1,5 +1,6 @@
-﻿const LIKE_TAG = "[LIKE]";
+const LIKE_TAG = "[LIKE]";
 const SEARCH_TAG = "SEARCH:";
+const MAX_SEARCH_QUERY_LENGTH = 120;
 
 const INFORMAL_REPLACEMENTS: Array<[RegExp, string]> = [
   [/Я понимаю/gi, "понятненько"],
@@ -39,12 +40,27 @@ export function splitReplyIntoMessages(text: string) {
   return text.split("\n\n").filter((sentence) => sentence.trim().length > 0);
 }
 
+function sanitizeSearchQuery(query: string) {
+  return query
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, MAX_SEARCH_QUERY_LENGTH);
+}
+
 export function extractSearchQuery(text: string) {
-  if (!text.includes(SEARCH_TAG)) return null;
-  return text.split(SEARCH_TAG)[1]?.trim() || null;
+  const tagIndex = text.indexOf(SEARCH_TAG);
+  if (tagIndex === -1) return null;
+
+  const rawQuery = text
+    .slice(tagIndex + SEARCH_TAG.length)
+    .split(/\r?\n/)[0]
+    ?.trim();
+  if (!rawQuery) return null;
+
+  return sanitizeSearchQuery(rawQuery) || null;
 }
 
 export function buildSearchAugmentedPrompt(searchResults: string) {
   return `Internet search results: ${searchResults}. Reply to the user using these results.`;
 }
-

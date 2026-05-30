@@ -15,6 +15,15 @@ type AdminReplyInput = {
   adminReplyText: string;
 };
 
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 class ChatService {
   private activeUsers = new Set<string>();
 
@@ -36,7 +45,13 @@ class ChatService {
     const match = input.replyText.match(/ID:\s(\d+)/);
     if (!match) return null;
 
-    const targetTelegramId = BigInt(match[1]);
+    let targetTelegramId: bigint;
+    try {
+      targetTelegramId = BigInt(match[1]);
+    } catch {
+      return null;
+    }
+
     const targetUser = await userRepo.findByTelegramId(targetTelegramId);
     if (!targetUser) return null;
 
@@ -86,7 +101,12 @@ class ChatService {
     return {
       reply,
       user,
-      adminNotification: `Incoming message from ${input.firstName || "Unknown"} (${input.username ? `@${input.username}` : "no_username"})\nID: ${input.telegramId}\nMessage: ${input.text}`,
+      adminNotification: [
+        `<b>Incoming message</b>`,
+        `From: ${escapeHtml(input.firstName || "Unknown")} (${input.username ? `@${escapeHtml(input.username)}` : "no_username"})`,
+        `ID: ${input.telegramId}`,
+        `Message: ${escapeHtml(input.text)}`,
+      ].join("\n"),
     };
   }
 

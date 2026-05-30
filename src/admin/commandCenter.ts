@@ -5,7 +5,26 @@ import { settingsRepo } from "../database/repositories/settings.repo";
 import { userRepo } from "../database/repositories/user.repo";
 
 const ADMIN_ID = env.ADMIN_ID;
-const adminStates = new Map<number, { action: string; data?: any }>();
+type AdminState = {
+  action: string;
+  data?: any;
+};
+
+type StoredAdminState = AdminState & {
+  timer: NodeJS.Timeout;
+};
+
+const ADMIN_STATE_TTL_MS = 5 * 60 * 1000;
+const adminStates = new Map<number, StoredAdminState>();
+
+function setAdminState(adminId: number, state: AdminState) {
+  clearAdminState(adminId);
+  const timer = setTimeout(() => {
+    adminStates.delete(adminId);
+  }, ADMIN_STATE_TTL_MS);
+
+  adminStates.set(adminId, { ...state, timer });
+}
 
 export async function handleAdminCommand(ctx: Context) {
   try {
@@ -38,7 +57,7 @@ export async function handleChangeModel(ctx: Context) {
   try {
     if (!ctx.from || ctx.from.id !== ADMIN_ID) return;
 
-    adminStates.set(ctx.from.id, { action: "waitingForModel" });
+    setAdminState(ctx.from.id, { action: "waitingForModel" });
 
     await ctx.reply(
       "📦 **Доступные модели:**\n\n" +
@@ -61,7 +80,7 @@ export async function handleChangePrompt(ctx: Context) {
     if (!ctx.from || ctx.from.id !== ADMIN_ID) return;
 
     const settings = await settingsRepo.getSettings();
-    adminStates.set(ctx.from.id, { action: "waitingForPrompt" });
+    setAdminState(ctx.from.id, { action: "waitingForPrompt" });
 
     await ctx.reply(
       `📝 **Текущий промпт:**\n\n\`\`\`\n${settings?.systemPrompt || "Стандартный промпт"}\n\`\`\`\n\nОтправьте новый промпт:`,
@@ -144,5 +163,10 @@ export function getAdminState(adminId: number) {
 }
 
 export function clearAdminState(adminId: number) {
+  const existingState = adminStates.get(adminId);
+  if (existingState) {
+    clearTimeout(existingState.timer);
+  }
+
   adminStates.delete(adminId);
 }

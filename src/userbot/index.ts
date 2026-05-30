@@ -1,9 +1,15 @@
-﻿import { startUserbotClient } from "./client";
+import { createRateLimiter } from "../utils/rate-limit";
+import { startUserbotClient } from "./client";
 import { registerUserbotHandlers } from "./handlers";
+
+const incomingMessageLimiter = createRateLimiter(3_000);
 
 async function startUserbot() {
   await startUserbotClient();
-  registerUserbotHandlers();
+  registerUserbotHandlers({ incomingMessageLimiter });
 }
 
-void startUserbot();
+startUserbot().catch((error) => {
+  console.error("[Userbot] Failed to start:", error);
+  process.exit(1);
+});

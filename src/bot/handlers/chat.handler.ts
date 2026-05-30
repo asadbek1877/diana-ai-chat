@@ -62,7 +62,9 @@ export async function processUserMessage(ctx: any, bot: Bot<any>) {
 
   if (!result) return;
 
-  await ctx.api.sendMessage(chatService.getAdminGroupId(), result.adminNotification);
+  await ctx.api.sendMessage(chatService.getAdminGroupId(), result.adminNotification, {
+    parse_mode: "HTML",
+  });
 
   if (!shouldReply) return;
 
@@ -98,6 +100,10 @@ export async function onMessage(ctx: any, bot: Bot<any>) {
 }
 
 export function registerChatHandlers(bot: Bot<any>) {
-  bot.on("message:text", (ctx) => void onMessage(ctx, bot));
-  bot.on("message:photo", (ctx) => void onMessage(ctx, bot));
+  bot.on("message:text", async (ctx) => {
+    await onMessage(ctx, bot);
+  });
+  bot.on("message:photo", async (ctx) => {
+    await onMessage(ctx, bot);
+  });
 }

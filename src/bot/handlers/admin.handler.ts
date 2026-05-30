@@ -3,7 +3,13 @@ import { adminService, UserEditState } from "../../services/admin.service";
 import { chatService } from "../../services/chat.service";
 import { isAdmin } from "../middleware/auth";
 
-const userStates = new Map<number, UserEditState>();
+type StoredUserEditState = UserEditState & {
+  timer: NodeJS.Timeout;
+};
+
+const USER_STATE_TTL_MS = 5 * 60 * 1000;
+const TELEGRAM_ID_PATTERN = /^\d+$/;
+const userStates = new Map<number, StoredUserEditState>();
 
 function escapeHtml(value: string) {
   return value
@@ -14,36 +20,71 @@ function escapeHtml(value: string) {
     .replace(/'/g, "&#39;");
 }
 
+function getValidTelegramId(value: unknown) {
+  if (typeof value !== "string" || !TELEGRAM_ID_PATTERN.test(value)) {
+    return null;
+  }
+
+  try {
+    BigInt(value);
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+async function answerInvalidCallback(ctx: any) {
+  await ctx.answerCallbackQuery({ text: "Invalid callback data", show_alert: true });
+}
+
+function clearUserState(adminId: number) {
+  const existingState = userStates.get(adminId);
+  if (existingState) {
+    clearTimeout(existingState.timer);
+  }
+
+  userStates.delete(adminId);
+}
+
+function setUserState(adminId: number, state: UserEditState) {
+  clearUserState(adminId);
+  const timer = setTimeout(() => {
+    userStates.delete(adminId);
+  }, USER_STATE_TTL_MS);
+
+  userStates.set(adminId, { ...state, timer });
+}
+
 function buildDashboardMenu() {
   return new InlineKeyboard()
-    .text("⚙️ Глобальные настройки", "menu_global")
+    .text("Глобальные настройки", "menu_global")
     .row()
-    .text("👥 Управление юзерами", "menu_users")
+    .text("Пользователи", "menu_users")
     .row()
-    .text("📊 Подробная статистика", "menu_stats");
+    .text("Статистика", "menu_stats");
 }
 
 function buildUsersMenu(users: Array<{ telegramId: bigint; firstName: string | null; tokensUsed: number }>) {
   const keyboard = new InlineKeyboard();
 
   for (const user of users) {
-    const label = `${user.firstName ?? "Без имени"} | 🪙 ${user.tokensUsed}`;
-    keyboard.text(`👤 ${label}`, `user_profile_${user.telegramId.toString()}`).row();
+    const label = `${user.firstName ?? "Без имени"} | токены ${user.tokensUsed}`;
+    keyboard.text(label, `user_profile_${user.telegramId.toString()}`).row();
   }
 
-  keyboard.text("🔙 Назад в меню", "menu_back");
+  keyboard.text("Назад", "menu_back");
   return keyboard;
 }
 
 function buildUserProfileMenu(telegramId: string) {
   return new InlineKeyboard()
-    .text("📝 Изменить промпт", `set_prompt_${telegramId}`)
+    .text("Изменить промпт", `set_prompt_${telegramId}`)
     .row()
-    .text("🤖 Изменить модель", `set_model_${telegramId}`)
+    .text("Изменить модель", `set_model_${telegramId}`)
     .row()
-    .text("🔄 Сбросить настройки", `reset_user_${telegramId}`)
+    .text("Сбросить настройки", `reset_user_${telegramId}`)
     .row()
-    .text("🔙 К списку юзеров", "menu_users");
+    .text("К списку пользователей", "menu_users");
 }
 
 function buildDashboardText(stats: Awaited<ReturnType<typeof adminService.getDashboardStats>>) {
@@ -51,12 +92,12 @@ function buildDashboardText(stats: Awaited<ReturnType<typeof adminService.getDas
   const isActive = stats.settings?.isBotActive ?? true;
 
   return [
-    "<b>🎛 Diana CRM | Панель управления</b>",
+    "<b>Diana CRM | Панель управления</b>",
     "",
-    `👥 Всего юзеров: ${stats.usersCount}`,
-    `🪙 Потрачено токенов: ${stats.totalTokens}`,
-    `🤖 Глобальная модель: ${escapeHtml(model)}`,
-    `🟢 Статус ИИ: ${isActive ? "Active" : "Спит"}`,
+    `Пользователей: ${stats.usersCount}`,
+    `Токенов потрачено: ${stats.totalTokens}`,
+    `Глобальная модель: ${escapeHtml(model)}`,
+    `Статус ИИ: ${isActive ? "Active" : "Спит"}`,
   ].join("\n");
 }
 
@@ -78,7 +119,7 @@ async function showDashboard(ctx: any, mode: "reply" | "edit") {
 async function renderUsersMenu(ctx: any) {
   const users = await adminService.getTopUsers(10);
   await ctx.editMessageText(
-    ["👥 <b>Топ-10 активных пользователей:</b>", "", "Выберите пользователя из списка ниже"].join("\n"),
+    ["<b>Топ-10 активных пользователей:</b>", "", "Выберите пользователя ниже"].join("\n"),
     {
       parse_mode: "HTML",
       reply_markup: buildUsersMenu(users),
@@ -96,10 +137,10 @@ async function renderUserProfile(ctx: any, telegramId: string) {
 
   await ctx.editMessageText(
     [
-      `👤 <b>Пользователь:</b> ${escapeHtml(user.firstName ?? "Без имени")} (@${escapeHtml(user.username ?? "no_username")})`,
-      `🪙 <b>Потрачено токенов:</b> ${user.tokensUsed}`,
-      `🤖 <b>Персональная модель:</b> ${escapeHtml(user.personalModel || "🌐 Глобальная")}`,
-      `📝 <b>Персональный промпт:</b> ${user.personalPrompt ? "Установлен ✅" : "🌐 Глобальный"}`,
+      `<b>Пользователь:</b> ${escapeHtml(user.firstName ?? "Без имени")} (@${escapeHtml(user.username ?? "no_username")})`,
+      `<b>Токенов потрачено:</b> ${user.tokensUsed}`,
+      `<b>Персональная модель:</b> ${escapeHtml(user.personalModel || "Глобальная")}`,
+      `<b>Персональный промпт:</b> ${user.personalPrompt ? "Установлен" : "Глобальный"}`,
     ].join("\n"),
     {
       parse_mode: "HTML",
@@ -130,28 +171,34 @@ export async function handleAdminTextState(ctx: any, text: string) {
   const state = userStates.get(ctx.from.id);
   if (!state) return false;
 
-  if (state.action === "waiting_for_prompt") {
-    await adminService.setPersonalPrompt(state.telegramId, text);
-    userStates.delete(ctx.from.id);
-    await ctx.reply("✅ Промпт пользователя сохранён");
-    await renderUserProfile(ctx, state.telegramId);
-    return true;
-  }
+  try {
+    if (state.action === "waiting_for_prompt") {
+      await adminService.setPersonalPrompt(state.telegramId, text);
+      await ctx.reply("Промпт сохранен");
+      await renderUserProfile(ctx, state.telegramId);
+      return true;
+    }
 
-  if (state.action === "waiting_for_model") {
-    await adminService.setPersonalModel(state.telegramId, text);
-    userStates.delete(ctx.from.id);
-    await ctx.reply("✅ Модель пользователя сохранена");
-    await renderUserProfile(ctx, state.telegramId);
-    return true;
-  }
+    if (state.action === "waiting_for_model") {
+      await adminService.setPersonalModel(state.telegramId, text);
+      await ctx.reply("Модель сохранена");
+      await renderUserProfile(ctx, state.telegramId);
+      return true;
+    }
 
-  return false;
+    return false;
+  } finally {
+    clearUserState(ctx.from.id);
+  }
 }
 
 export function registerAdminHandlers(bot: Bot<any>) {
-  bot.command("start", (ctx) => void handleStart(ctx));
-  bot.command("admin", (ctx) => void handleAdmin(ctx));
+  bot.command("start", async (ctx) => {
+    await handleStart(ctx);
+  });
+  bot.command("admin", async (ctx) => {
+    await handleAdmin(ctx);
+  });
 
   bot.callbackQuery("menu_back", async (ctx) => {
     if (!isAdmin(ctx)) return;
@@ -161,7 +208,7 @@ export function registerAdminHandlers(bot: Bot<any>) {
 
   bot.callbackQuery("menu_global", async (ctx) => {
     if (!isAdmin(ctx)) return;
-    await ctx.answerCallbackQuery({ text: "Раздел в разработке 🛠", show_alert: true });
+    await ctx.answerCallbackQuery({ text: "Раздел в разработке", show_alert: true });
   });
 
   bot.callbackQuery("menu_users", async (ctx) => {
@@ -176,12 +223,12 @@ export function registerAdminHandlers(bot: Bot<any>) {
     await ctx.answerCallbackQuery();
     await ctx.editMessageText(
       [
-        "<b>📊 Подробная статистика</b>",
+        "<b>Подробная статистика</b>",
         "",
-        `👥 Всего юзеров: ${stats.usersCount}`,
-        `🪙 Потрачено токенов: ${stats.totalTokens}`,
-        `🤖 Глобальная модель: ${escapeHtml(stats.settings?.currentModel || "llama-3.1-8b-instant")}`,
-        `🟢 Статус ИИ: ${(stats.settings?.isBotActive ?? true) ? "Active" : "Спит"}`,
+        `Пользователей: ${stats.usersCount}`,
+        `Токенов потрачено: ${stats.totalTokens}`,
+        `Глобальная модель: ${escapeHtml(stats.settings?.currentModel || "llama-3.1-8b-instant")}`,
+        `Статус ИИ: ${(stats.settings?.isBotActive ?? true) ? "Active" : "Спит"}`,
       ].join("\n"),
       {
         parse_mode: "HTML",
@@ -192,35 +239,47 @@ export function registerAdminHandlers(bot: Bot<any>) {
 
   bot.callbackQuery(/^user_profile_(.+)$/, async (ctx) => {
     if (!isAdmin(ctx)) return;
-    const telegramId = ctx.match?.[1];
-    if (!telegramId) return;
+    const telegramId = getValidTelegramId(ctx.match?.[1]);
+    if (!telegramId) {
+      await answerInvalidCallback(ctx);
+      return;
+    }
     await ctx.answerCallbackQuery();
     await renderUserProfile(ctx, telegramId);
   });
 
   bot.callbackQuery(/^reset_user_(.+)$/, async (ctx) => {
     if (!isAdmin(ctx)) return;
-    const telegramId = ctx.match?.[1];
-    if (!telegramId) return;
+    const telegramId = getValidTelegramId(ctx.match?.[1]);
+    if (!telegramId) {
+      await answerInvalidCallback(ctx);
+      return;
+    }
     await adminService.resetUserSettings(telegramId);
-    await ctx.answerCallbackQuery({ text: "✅ Настройки сброшены на глобальные!" });
+    await ctx.answerCallbackQuery({ text: "Настройки сброшены" });
     await renderUserProfile(ctx, telegramId);
   });
 
   bot.callbackQuery(/^set_prompt_(.+)$/, async (ctx) => {
     if (!isAdmin(ctx) || !ctx.from) return;
-    const telegramId = ctx.match?.[1];
-    if (!telegramId) return;
-    userStates.set(ctx.from.id, { action: "waiting_for_prompt", telegramId });
+    const telegramId = getValidTelegramId(ctx.match?.[1]);
+    if (!telegramId) {
+      await answerInvalidCallback(ctx);
+      return;
+    }
+    setUserState(ctx.from.id, { action: "waiting_for_prompt", telegramId });
     await ctx.answerCallbackQuery();
     await ctx.reply(`Отправьте новый промпт для пользователя ${telegramId}`);
   });
 
   bot.callbackQuery(/^set_model_(.+)$/, async (ctx) => {
     if (!isAdmin(ctx) || !ctx.from) return;
-    const telegramId = ctx.match?.[1];
-    if (!telegramId) return;
-    userStates.set(ctx.from.id, { action: "waiting_for_model", telegramId });
+    const telegramId = getValidTelegramId(ctx.match?.[1]);
+    if (!telegramId) {
+      await answerInvalidCallback(ctx);
+      return;
+    }
+    setUserState(ctx.from.id, { action: "waiting_for_model", telegramId });
     await ctx.answerCallbackQuery();
     await ctx.reply(`Отправьте новую модель для пользователя ${telegramId}`);
   });

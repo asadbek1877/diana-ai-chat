@@ -1,10 +1,24 @@
 import { settingsRepo } from "../database/repositories/settings.repo";
 import { userRepo } from "../database/repositories/user.repo";
 
+const TELEGRAM_ID_PATTERN = /^\d+$/;
+
 export type UserEditState = {
   action: "waiting_for_prompt" | "waiting_for_model";
   telegramId: string;
 };
+
+function parseTelegramId(telegramId: string) {
+  if (!TELEGRAM_ID_PATTERN.test(telegramId)) {
+    throw new Error("Invalid telegramId");
+  }
+
+  try {
+    return BigInt(telegramId);
+  } catch {
+    throw new Error("Invalid telegramId");
+  }
+}
 
 class AdminService {
   async getDashboardStats() {
@@ -31,19 +45,19 @@ class AdminService {
   }
 
   getUserProfile(telegramId: string) {
-    return userRepo.findByTelegramId(BigInt(telegramId));
+    return userRepo.findByTelegramId(parseTelegramId(telegramId));
   }
 
   resetUserSettings(telegramId: string) {
-    return userRepo.resetPersonalSettings(BigInt(telegramId));
+    return userRepo.resetPersonalSettings(parseTelegramId(telegramId));
   }
 
   setPersonalPrompt(telegramId: string, prompt: string) {
-    return userRepo.setPersonalPrompt(BigInt(telegramId), prompt);
+    return userRepo.setPersonalPrompt(parseTelegramId(telegramId), prompt);
   }
 
   setPersonalModel(telegramId: string, model: string) {
-    return userRepo.setPersonalModel(BigInt(telegramId), model);
+    return userRepo.setPersonalModel(parseTelegramId(telegramId), model);
   }
 }
 
