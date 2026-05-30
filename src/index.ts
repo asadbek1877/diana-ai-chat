@@ -19,6 +19,7 @@ if (!Number.isFinite(adminId) || adminId <= 0) {
 }
 
 const bot = new Bot(botToken);
+let startAppPromise: Promise<void> | null = null;
 
 type UserEditState = {
   action: "waiting_for_prompt" | "waiting_for_model";
@@ -27,6 +28,10 @@ type UserEditState = {
 
 const activeUsers = new Set<string>();
 const userStates = new Map<number, UserEditState>();
+
+// ==========================================
+// 🛠 ЁРДАМЧИ ФУНКЦИЯЛАР
+// ==========================================
 
 function isAdmin(ctx: Context) {
   return ctx.from?.id === adminId;
@@ -81,6 +86,10 @@ function isTextMessage(ctx: Context) {
   return Boolean(ctx.message && "text" in ctx.message && typeof ctx.message.text === "string");
 }
 
+// ==========================================
+// 📊 ДАШБОРД ВА БАЗА МАНТИҒИ
+// ==========================================
+
 async function getDashboardStats() {
   const [usersCount, tokensResult, settings] = await Promise.all([
     prisma.user.count(),
@@ -103,8 +112,6 @@ async function getDashboardStats() {
       : null,
   };
 }
-
-
 
 async function sendMainDashboard(ctx: Context) {
   const stats = await getDashboardStats();
@@ -215,7 +222,6 @@ async function resetUserSettings(ctx: Context, telegramId: string) {
   await renderUserProfile(ctx, telegramId);
 }
 
-// Энди бу функция Админни ҳам базага ёзади, чунки Админ ҳам чатлашади
 async function activateUser(ctx: Context) {
   if (!ctx.from) return;
   const telegramId = String(ctx.from.id);
@@ -245,7 +251,6 @@ async function handleRegularUserChat(ctx: Context) {
   const telegramId = String(ctx.from.id);
   const userMessage = (ctx.message as { text: string }).text.trim();
 
-  // Агар базада бўлмаса, киритиб қўямиз
   if (!activeUsers.has(telegramId)) {
     await activateUser(ctx);
   }
@@ -262,40 +267,99 @@ async function handleRegularUserChat(ctx: Context) {
     take: 20,
   });
 
-  const assistantReply = await askDiana(
-    telegramId,
-    userMessage,
-    chatHistory.map((entry) => ({
-      role: entry.role === "diana" ? "assistant" : "user",
-      content: entry.content,
-    }))
-  );
+  console.log(`[ЧАТ] 1. Юзердан хабар келди: "${userMessage}"`);
+  console.log("[ЧАТ] 2. Groq AI га сўров кетяпти...");
 
-  // 1. АВВАЛ юзерга жавобни жўнатамиз (у кутиб қолмаслиги учун)
-  await ctx.reply(assistantReply);
+  try {
+    const assistantReply = await askDiana(
+      telegramId,
+      userMessage,
+      chatHistory.map((entry) => ({
+        role: entry.role === "diana" ? "assistant" : "user",
+        content: entry.content,
+      }))
+    );
 
-  // 2. Базага ёзишни эса орқа фонга (Promise.all) ташлаб қўямиз, await қилмаймиз!
-  Promise.all([
-    prisma.chatLog.create({
-      data: { telegramId: BigInt(telegramId), userId: user.id, role: "user", content: userMessage }
-    }),
-    prisma.chatLog.create({
-      data: { telegramId: BigInt(telegramId), userId: user.id, role: "diana", content: assistantReply }
-    })
-  ]).catch((err) => console.error("Фонда базага ёзишда хато:", err));
+    console.log("[ЧАТ] 3. Groq AI жавоб берди:", assistantReply);
+    await ctx.reply(assistantReply);
+
+    Promise.all([
+      prisma.chatLog.create({
+        data: { telegramId: BigInt(telegramId), userId: user.id, role: "user", content: userMessage }
+      }),
+      prisma.chatLog.create({
+        data: { telegramId: BigInt(telegramId), userId: user.id, role: "diana", content: assistantReply }
+      })
+    ]).catch((err) => console.error("Фонда базага ёзишда хато:", err));
+  } catch (aiError) {
+    console.error("❌ [ЧАТ] Groq AI да хатолик юз берди:", aiError);
+    await ctx.reply("Кечирасиз, менинг миямда (AI) қандайдир узилиш юз берди 🤕");
+  }
 }
 
+async function processIncomingText(ctx: Context) {
+  try {
+    if (!ctx.from || !ctx.message || !("text" in ctx.message) || typeof ctx.message.text !== "string") {
+      return;
+    }
+
+    const text = ctx.message.text.trim();
+    if (text.startsWith("/")) return;
+
+    if (isAdmin(ctx)) {
+      const state = userStates.get(ctx.from.id);
+
+      if (state?.action === "waiting_for_prompt") {
+        await prisma.user.update({
+          where: { telegramId: BigInt(state.telegramId) },
+          data: { personalPrompt: text },
+        });
+        userStates.delete(ctx.from.id);
+        await ctx.reply("✅ Промпт пользователя сохранён");
+        await renderUserProfile(ctx, state.telegramId);
+        return;
+      }
+
+      if (state?.action === "waiting_for_model") {
+        await prisma.user.update({
+          where: { telegramId: BigInt(state.telegramId) },
+          data: { personalModel: text },
+        });
+        userStates.delete(ctx.from.id);
+        await ctx.reply("✅ Модель пользователя сохранена");
+        await renderUserProfile(ctx, state.telegramId);
+        return;
+      }
+    }
+
+    await handleRegularUserChat(ctx);
+  } catch (error) {
+    console.error("Детальная ошибка message:text:", error);
+    try {
+      await ctx.reply("Не удалось обработать сообщение");
+    } catch (e) {}
+  }
+}
+
+// ==========================================
+// 🤖 БОТ HANDLER'ЛАРИ (Тўғри кетма-кетликда)
+// ==========================================
+
+// 1. Логгер (Энг тепада бўлиши шарт, ҳамма хабарни ушлайди)
+bot.use(async (ctx, next) => {
+  console.log("📥 Янги хабар/амал келди:", ctx.message?.text || ctx.callbackQuery?.data || "Медиа/Бошқа");
+  await next();
+});
+
+// 2. Командалар
 bot.command("start", async (ctx) => {
   console.log("🟢 1. Телеграмдан /start командаси келди!");
   try {
-    console.log("⏳ 2. Базага (activateUser) уланишга уриняпмиз...");
     await activateUser(ctx); 
-    console.log("✅ 3. Базага ёзилди! (activateUser муваффақиятли тугади)");
+    console.log("✅ 2. Базага ёзилди! (activateUser муваффақиятли тугади)");
 
     if (isAdmin(ctx)) {
-      console.log("⏳ 4. Админ экан, Дашборд яратяпмиз...");
       await sendMainDashboard(ctx);
-      console.log("✅ 5. Дашборд Телеграмга жўнатилди!");
     } else {
       await ctx.reply("Привет! Я ассистент Диана");
     }
@@ -313,6 +377,7 @@ bot.command("admin", async (ctx) => {
   }
 });
 
+// 3. Callback Queries (Кнопкалар)
 bot.callbackQuery("menu_back", async (ctx) => {
   try {
     if (!isAdmin(ctx)) return;
@@ -418,64 +483,20 @@ bot.callbackQuery(/^set_model_(.+)$/, async (ctx) => {
   }
 });
 
-// БИТТА ВА ЯГОНА TEXT HANDLER
-bot.on("message:text", async (ctx) => {
-  try {
-    if (!ctx.from) return;
-    const text = ctx.message.text.trim();
-    if (text.startsWith("/")) return; // Командаларни ўтказиб юборамиз
-
-    // Агар юзер Админ бўлса, унинг ҳолатини (state) текширамиз
-    if (isAdmin(ctx)) {
-      const state = userStates.get(ctx.from.id);
-
-      if (state?.action === "waiting_for_prompt") {
-        await prisma.user.update({
-          where: { telegramId: BigInt(state.telegramId) },
-          data: { personalPrompt: text },
-        });
-        userStates.delete(ctx.from.id);
-        await ctx.reply("✅ Промпт пользователя сохранён");
-        await renderUserProfile(ctx, state.telegramId);
-        return;
-      }
-
-      if (state?.action === "waiting_for_model") {
-        await prisma.user.update({
-          where: { telegramId: BigInt(state.telegramId) },
-          data: { personalModel: text },
-        });
-        userStates.delete(ctx.from.id);
-        await ctx.reply("✅ Модель пользователя сохранена");
-        await renderUserProfile(ctx, state.telegramId);
-        return;
-      }
-      
-      // Агар Админ ҳеч қандай кнопка босмаган бўлса (state йўқ), 
-      // у ҳолда У ҲАМ ОДДИЙ ОДАМДЕК ЧАТЛАШАДИ! Пастга ўтказиб юборамиз.
-    }
-
-    // Ҳамма (Админ ҳам, оддий юзер ҳам) шу ерда ИИ билан гаплашади
-    await handleRegularUserChat(ctx);
-
-  } catch (error) {
-    console.error("Детальная ошибка message:text:", error);
-    try {
-      await ctx.reply("Не удалось обработать сообщение");
-    } catch (e) {}
-    
-  }
+// 4. Матнли хабарларни ушлаш (Доим энг пастда бўлиши керак)
+bot.on("message:text", (ctx) => {
+  void processIncomingText(ctx);
 });
 
-bot.use((ctx, next) => {
-  console.log("📥 Янги хабар келди:", ctx.message?.text || "Кнопка босилди");
-  next();
-});
+// 5. Глобал хатоларни ушлаш
 bot.catch((error) => {
   console.error("Глобальная ошибка бота:", error.error);
 });
 
-// Ақлли порт қидирувчи сервер
+// ==========================================
+// 🚀 СЕРВЕРНИ ИШГА ТУШИРИШ
+// ==========================================
+
 function startHealthServer(portToTry: number) {
   const server = http.createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "text/plain" });
@@ -498,40 +519,43 @@ function startHealthServer(portToTry: number) {
 }
 
 async function startApp() {
-  try {
-    startHealthServer(initialPort);
-
-    console.log("[System] Diana CRM dashboard is starting...");
-
-    // 🧹 1. ТЕЛЕГРАМНИ ТОЗАЛАШ (Энг муҳим қатор!)
-    // Бу ботнинг миясидаги эски қотиб қолган хабарларни ва Render'даги уланишни узиб ташлайди
-    await bot.api.deleteWebhook({ drop_pending_updates: true });
-    console.log("[System] Webhook ва эски хабарлар тозаланди!");
-
-    // 2. Менюни ўрнатиш
-    await bot.api.setMyCommands([
-      { command: "start", description: "Очиш / Панель управления" }
-    ]);
-
-    // 3. Ботни ишга тушириш
-    await bot.start({
-      onStart: (botInfo) => {
-        console.log(`[System] Bot connected as @${botInfo.username}`);
-      },
-    });
-  } catch (error) {
-    console.error("Детальная ошибка запуска:", error);
-    process.exit(1);
+  if (startAppPromise) {
+    return startAppPromise;
   }
+
+  startAppPromise = (async () => {
+    try {
+      startHealthServer(initialPort);
+
+      console.log("[System] Diana CRM dashboard is starting...");
+
+      // 🧹 1. ТЕЛЕГРАМНИ ТОЗАЛАШ
+      // ВАҚТИНЧА ЎЧИРИБ ҚЎЙИЛДИ: Локалда без VPN ишлаганда краш бўлмаслиги учун. 
+      // Агар серверга (Render) юкласангиз, бу комментни олиб ташлашингиз мумкин.
+      // await bot.api.deleteWebhook({ drop_pending_updates: true });
+      console.log("[System] Webhook текшируви ўтказиб юборилди!");
+
+      // 2. Менюни ўрнатиш
+      await bot.api.setMyCommands([
+        { command: "start", description: "Очиш / Панель управления" }
+      ]);
+
+      // 3. Ботни ишга тушириш
+      await bot.start({
+        onStart: (botInfo) => {
+          console.log(`[System] Bot connected as @${botInfo.username}`);
+        },
+      });
+    } catch (error) {
+      console.error("Детальная ошибка запуска:", error);
+      process.exit(1);
+    }
+  })();
+
+  return startAppPromise;
 }
-
-
-
-
-
-
 
 process.once("SIGINT", () => bot.stop());
 process.once("SIGTERM", () => bot.stop());
 
-startApp();
+void startApp();
