@@ -8,6 +8,7 @@ import dotenv from "dotenv";
 
 // 🛠 ТОЗАЛАНГАН ИМПОРТ: Янги openrouter.ts файлимиздаги askDiana функциясини улаймиз
 import { askDiana } from "../ai/openrouter"; 
+import { searchInternet } from "../ai/search";
 
 dotenv.config();
 
@@ -95,8 +96,22 @@ async function processUserQueue(tgId: bigint) {
     const recentMessages = await prisma.message.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" }, take: 10 });
     const reversedMessages = [...recentMessages].reverse();
 
-    // 🚀 ТЎҒРИЛАНГАН ЖОЙИ: askDiana функциясига янги хабар ва базадаги тарихни тўғри узатамиз
+    // 1. Спрашиваем Диану: "Нужен ли интернет?"
     let dianaReply = await askDiana(combinedUserText, reversedMessages);
+
+    // 2. Если Диана хочет найти что-то в интернете (наша логика поиска)
+    if (dianaReply.includes("SEARCH:")) {
+      const query = dianaReply.split("SEARCH:")[1].trim();
+      console.log("🌐 Диана ищет в интернете:", query);
+      
+      const searchResults = await searchInternet(query);
+      
+      // 3. Отправляем найденные данные обратно ИИ для формирования итогового ответа
+      dianaReply = await askDiana(
+        `Вот информация, найденная в интернете: ${searchResults}. Теперь ответь пользователю на основе этих данных.`, 
+        reversedMessages
+      );
+    }
 
     // 🚀 ФИЛЬТРДАН ЎТКАЗАМИЗ
     dianaReply = formatDianaText(dianaReply);
