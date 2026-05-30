@@ -1,17 +1,10 @@
 import { Context, Bot, Api, RawApi } from "grammy";
-import { PrismaClient } from "@prisma/client";
-import { Pool } from "pg";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { env } from "../config/env";
+import { messageRepo } from "../database/repositories/message.repo";
+import { userRepo } from "../database/repositories/user.repo";
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL as string });
-const adapter = new PrismaPg(pool);
-const prisma = new PrismaClient({ adapter });
+const ADMIN_ID = env.ADMIN_ID;
 
-const ADMIN_ID = Number(process.env.ADMIN_ID);
-
-/**
- * � СОЗДАНИЕ ИЛИ ПОЛУЧЕНИЕ ПОЛЬЗОВАТЕЛЯ
- */
 export async function ensureUserExists(
   telegramId: bigint | string,
   firstName?: string,
@@ -20,47 +13,24 @@ export async function ensureUserExists(
   try {
     const tgId = typeof telegramId === "string" ? BigInt(telegramId) : telegramId;
 
-    let user = await prisma.user.findUnique({
-      where: { telegramId: tgId }
+    return await userRepo.ensureUser({
+      telegramId: tgId,
+      firstName: firstName || "Unknown",
+      username: username || null,
     });
-
-    if (!user) {
-      user = await prisma.user.create({
-        data: {
-          telegramId: tgId,
-          firstName: firstName || "Unknown",
-          username: username || null,
-          isBlocked: false
-        }
-      });
-
-      console.log(`✅ Новый пользователь создан: ${firstName} (${tgId})`);
-    }
-
-    return user;
   } catch (error) {
     console.error("Error ensuring user exists:", error);
     return null;
   }
 }
 
-/**
- * 💾 ЛОГИРОВАНИЕ СООБЩЕНИЯ В БД (используя Message модель)
- */
 export async function logChatMessage(
   userId: string,
   role: "user" | "assistant",
   content: string
 ) {
   try {
-    await prisma.message.create({
-      data: {
-        userId,
-        role,
-        content
-      }
-    });
-
+    await messageRepo.saveMessage({ userId, role, content, source: "logger" });
     return true;
   } catch (error) {
     console.error("Error logging message:", error);
@@ -68,9 +38,6 @@ export async function logChatMessage(
   }
 }
 
-/**
- * 📢 ОТПРАВКА УВЕДОМЛЕНИЯ АДМИНУ В РЕАЛЬНОМ ВРЕМЕНИ
- */
 export async function notifyAdmin(
   bot: Bot<any, Api<RawApi>>,
   userMessage: string,
@@ -102,7 +69,7 @@ ${botResponse.substring(0, 200)}${botResponse.length > 200 ? "..." : ""}
     `;
 
     await bot.api.sendMessage(ADMIN_ID, notificationText, {
-      parse_mode: "HTML"
+      parse_mode: "HTML",
     });
 
     return true;
@@ -112,10 +79,6 @@ ${botResponse.substring(0, 200)}${botResponse.length > 200 ? "..." : ""}
   }
 }
 
-/**
- * 🔄 ПОЛНЫЙ ЦИКЛ ЛОГИРОВАНИЯ
- * Вызывайте эту функцию при получении сообщения от пользователя и его обработке
- */
 export async function handleUserMessage(
   ctx: Context,
   userMessage: string,
@@ -128,8 +91,6 @@ export async function handleUserMessage(
     const telegramId = String(ctx.from.id);
     const firstName = ctx.from.first_name;
     const username = ctx.from.username;
-
-    // 1️⃣ Создаем/получаем пользователя
     const user = await ensureUserExists(telegramId, firstName, username);
 
     if (!user) {
@@ -137,55 +98,32 @@ export async function handleUserMessage(
       return;
     }
 
-    // 2️⃣ Логируем сообщение пользователя
-    await logChatMessage(user.id, "user", userMessage);
-
-    // 3️⃣ Логируем ответ бота
-    await logChatMessage(user.id, "assistant", botResponse);
-
-    // 4️⃣ Отправляем уведомление админу
+    await messageRepo.saveConversation(user.id, userMessage, botResponse, "telegram_bot");
     await notifyAdmin(bot, userMessage, botResponse, {
       firstName,
       username,
-      telegramId
+      telegramId,
     });
 
-    console.log(`✅ Логирование завершено для ${firstName} (${telegramId})`);
+    console.log(`Logging completed for ${firstName} (${telegramId})`);
   } catch (error) {
     console.error("Error in handleUserMessage:", error);
   }
 }
 
-/**
- * 📋 ПОЛУЧЕНИЕ ИСТОРИИ ЧАТА ПОЛЬЗОВАТЕЛЯ
- */
-export async function getUserChatHistory(
-  userId: string,
-  limit: number = 50
-) {
+export async function getUserChatHistory(userId: string, limit: number = 50) {
   try {
-    const logs = await prisma.message.findMany({
-      where: { userId },
-      orderBy: { createdAt: "desc" },
-      take: limit
-    });
-
-    return logs.reverse(); // Возвращаем от старых к новым
+    const logs = await messageRepo.findRecentByUserId(userId, limit);
+    return logs.reverse();
   } catch (error) {
     console.error("Error getting chat history:", error);
     return [];
   }
 }
 
-/**
- * 🗑️ УДАЛЕНИЕ ИСТОРИИ ЧАТА ПОЛЬЗОВАТЕЛЯ (для админа)
- */
 export async function clearUserChatHistory(userId: string) {
   try {
-    const result = await prisma.message.deleteMany({
-      where: { userId }
-    });
-
+    const result = await messageRepo.deleteByUserId(userId);
     return result.count;
   } catch (error) {
     console.error("Error clearing chat history:", error);
@@ -193,29 +131,17 @@ export async function clearUserChatHistory(userId: string) {
   }
 }
 
-/**
- * 📊 ПОЛУЧЕНИЕ СТАТИСТИКИ ПОЛЬЗОВАТЕЛЯ
- */
 export async function getUserStats(userId: string) {
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: userId }
-    });
-
-    const messageCount = await prisma.message.count({
-      where: { userId }
-    });
-
-    const firstMessageDate = await prisma.message.findFirst({
-      where: { userId },
-      orderBy: { createdAt: "asc" }
-    });
+    const user = await userRepo.findById(userId);
+    const messageCount = await messageRepo.countByUserId(userId);
+    const firstMessageDate = await messageRepo.findFirstByUserId(userId);
 
     return {
       user,
       totalMessages: messageCount,
       joinedAt: firstMessageDate?.createdAt || user?.createdAt,
-      isBlocked: user?.isBlocked || false
+      isBlocked: user?.isBlocked || false,
     };
   } catch (error) {
     console.error("Error getting user stats:", error);

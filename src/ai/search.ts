@@ -1,9 +1,7 @@
 import { tavily } from "@tavily/core";
-import dotenv from "dotenv";
+import { env } from "../config/env";
 
-dotenv.config();
-
-const tvly = tavily({ apiKey: process.env.TAVILY_API_KEY! });
+const tvly = tavily({ apiKey: env.TAVILY_API_KEY! });
 
 export async function searchInternet(query: string) {
   try {

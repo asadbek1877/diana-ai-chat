@@ -1,77 +1,39 @@
-import { Bot, Context } from "grammy";
-import { PrismaClient } from "@prisma/client";
-import { Pool } from "pg";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { Context } from "grammy";
+import { env } from "../config/env";
+import { messageRepo } from "../database/repositories/message.repo";
+import { settingsRepo } from "../database/repositories/settings.repo";
+import { userRepo } from "../database/repositories/user.repo";
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL as string });
-const adapter = new PrismaPg(pool);
-const prisma = new PrismaClient({ adapter });
-
-const ADMIN_ID = Number(process.env.ADMIN_ID);
-
-// Store admin states in memory (in production, use Redis)
+const ADMIN_ID = env.ADMIN_ID;
 const adminStates = new Map<number, { action: string; data?: any }>();
 
-/**
- * 🔑 ОСНОВНАЯ АДМИН-КОМАНДА /admin
- * Показывает админ-панель с кнопками управления ботом
- */
 export async function handleAdminCommand(ctx: Context) {
   try {
-    // Проверка прав доступа
     if (!ctx.from || ctx.from.id !== ADMIN_ID) {
       return ctx.reply("🚫 Только администратор может использовать эту команду");
     }
 
-    // Получаем текущие настройки
-    const settings = await prisma.settings.findFirst();
-
+    const settings = await settingsRepo.getSettings();
     const botStatus = settings?.isBotActive ? "✅ ВКЛЮЧЕН" : "🛑 ОТКЛЮЧЕН";
     const modelStatus = `📦 Модель: ${settings?.currentModel || "не установлена"}`;
 
-    await ctx.reply(
-      `🛠 **КОМАНДНЫЙ ЦЕНТР ДИАНЫ**\n\n${botStatus}\n${modelStatus}\n\nЧто вы хотите изменить?`,
-      {
-        parse_mode: "HTML",
-        reply_markup: {
-          inline_keyboard: [
-            [
-              {
-                text: "⚙️ Сменить модель",
-                callback_data: "admin_change_model"
-              }
-            ],
-            [
-              {
-                text: "📝 Изменить промпт",
-                callback_data: "admin_change_prompt"
-              }
-            ],
-            [
-              {
-                text: `${settings?.isBotActive ? "🛑" : "✅"} Kill Switch`,
-                callback_data: "admin_toggle_bot"
-              }
-            ],
-            [
-              {
-                text: "📊 Статистика",
-                callback_data: "admin_stats"
-              }
-            ]
-          ]
-        }
-      }
-    );
+    await ctx.reply(`🛠 **КОМАНДНЫЙ ЦЕНТР ДИАНЫ**\n\n${botStatus}\n${modelStatus}\n\nЧто вы хотите изменить?`, {
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "⚙️ Сменить модель", callback_data: "admin_change_model" }],
+          [{ text: "📝 Изменить промпт", callback_data: "admin_change_prompt" }],
+          [{ text: `${settings?.isBotActive ? "🛑" : "✅"} Kill Switch`, callback_data: "admin_toggle_bot" }],
+          [{ text: "📊 Статистика", callback_data: "admin_stats" }],
+        ],
+      },
+    });
   } catch (error) {
     console.error("Admin command error:", error);
     ctx.reply("❌ Ошибка при открытии админ-панели");
   }
 }
 
-/**
- * ⚙️ ОБРАБОТЧИК: Смена модели
- */
 export async function handleChangeModel(ctx: Context) {
   try {
     if (!ctx.from || ctx.from.id !== ADMIN_ID) return;
@@ -80,13 +42,11 @@ export async function handleChangeModel(ctx: Context) {
 
     await ctx.reply(
       "📦 **Доступные модели:**\n\n" +
-      "• `deepseek/deepseek-chat:free`\n" +
-      "• `qwen/qwen-2-7b-instruct:free`\n" +
-      "• `meta-llama/llama-3-8b-instruct:free`\n\n" +
-      "Отправьте название модели, которую вы хотите использовать:",
-      {
-        parse_mode: "HTML"
-      }
+        "• `deepseek/deepseek-chat:free`\n" +
+        "• `qwen/qwen-2-7b-instruct:free`\n" +
+        "• `meta-llama/llama-3-8b-instruct:free`\n\n" +
+        "Отправьте название модели, которую хотите использовать:",
+      { parse_mode: "HTML" }
     );
 
     await ctx.answerCallbackQuery();
@@ -96,21 +56,16 @@ export async function handleChangeModel(ctx: Context) {
   }
 }
 
-/**
- * 📝 ОБРАБОТЧИК: Изменение промпта
- */
 export async function handleChangePrompt(ctx: Context) {
   try {
     if (!ctx.from || ctx.from.id !== ADMIN_ID) return;
 
-    const settings = await prisma.settings.findFirst();
+    const settings = await settingsRepo.getSettings();
     adminStates.set(ctx.from.id, { action: "waitingForPrompt" });
 
     await ctx.reply(
       `📝 **Текущий промпт:**\n\n\`\`\`\n${settings?.systemPrompt || "Стандартный промпт"}\n\`\`\`\n\nОтправьте новый промпт:`,
-      {
-        parse_mode: "HTML"
-      }
+      { parse_mode: "HTML" }
     );
 
     await ctx.answerCallbackQuery();
@@ -120,35 +75,16 @@ export async function handleChangePrompt(ctx: Context) {
   }
 }
 
-/**
- * 🛑 ОБРАБОТЧИК: Kill Switch (включить/выключить бота)
- */
 export async function handleToggleBot(ctx: Context) {
   try {
     if (!ctx.from || ctx.from.id !== ADMIN_ID) return;
 
-    const settings = await prisma.settings.findFirst();
-
-    if (!settings) {
-      await prisma.settings.create({
-        data: {
-          isBotActive: false,
-          systemPrompt: "Ты Диана, дерзкая и веселая девушка..."
-        }
-      });
-    } else {
-      await prisma.settings.update({
-        where: { id: settings.id },
-        data: { isBotActive: !settings.isBotActive }
-      });
-    }
-
-    const newSettings = await prisma.settings.findFirst();
+    const newSettings = await settingsRepo.toggleBot();
     const newStatus = newSettings?.isBotActive ? "✅ ВКЛЮЧЕН" : "🛑 ОТКЛЮЧЕН";
 
     await ctx.answerCallbackQuery(`Бот теперь ${newStatus}`);
     await ctx.editMessageText(`🛠 Статус бота: ${newStatus}`, {
-      reply_markup: undefined
+      reply_markup: undefined,
     });
   } catch (error) {
     console.error("Toggle bot error:", error);
@@ -156,21 +92,14 @@ export async function handleToggleBot(ctx: Context) {
   }
 }
 
-/**
- * 📊 ОБРАБОТЧИК: Показать статистику
- */
 export async function handleStats(ctx: Context) {
   try {
     if (!ctx.from || ctx.from.id !== ADMIN_ID) return;
 
-    const totalUsers = await prisma.user.count();
-    const todayMessages = await prisma.message.count({
-      where: {
-        createdAt: {
-          gte: new Date(new Date().setHours(0, 0, 0, 0))
-        }
-      }
-    });
+    const [totalUsers, todayMessages] = await Promise.all([
+      userRepo.countUsers(),
+      messageRepo.countToday(),
+    ]);
 
     const stats = `
 📊 **СТАТИСТИКА БОТА**
@@ -182,7 +111,7 @@ export async function handleStats(ctx: Context) {
     await ctx.answerCallbackQuery("Статистика загружена");
     await ctx.editMessageText(stats.trim(), {
       parse_mode: "HTML",
-      reply_markup: undefined
+      reply_markup: undefined,
     });
   } catch (error) {
     console.error("Stats error:", error);
@@ -190,27 +119,9 @@ export async function handleStats(ctx: Context) {
   }
 }
 
-/**
- * 💾 ОБРАБОТЧИК: Сохранение новой модели
- */
 export async function saveNewModel(modelName: string) {
   try {
-    const settings = await prisma.settings.findFirst();
-
-    if (!settings) {
-      await prisma.settings.create({
-        data: {
-          currentModel: modelName,
-          systemPrompt: "Ты Диана, дерзкая и веселая девушка..."
-        }
-      });
-    } else {
-      await prisma.settings.update({
-        where: { id: settings.id },
-        data: { currentModel: modelName }
-      });
-    }
-
+    await settingsRepo.saveModel(modelName);
     return true;
   } catch (error) {
     console.error("Save model error:", error);
@@ -218,27 +129,9 @@ export async function saveNewModel(modelName: string) {
   }
 }
 
-/**
- * 💾 ОБРАБОТЧИК: Сохранение нового промпта
- */
 export async function saveNewPrompt(prompt: string) {
   try {
-    const settings = await prisma.settings.findFirst();
-
-    if (!settings) {
-      await prisma.settings.create({
-        data: {
-          systemPrompt: prompt,
-          currentModel: "deepseek/deepseek-chat:free"
-        }
-      });
-    } else {
-      await prisma.settings.update({
-        where: { id: settings.id },
-        data: { systemPrompt: prompt }
-      });
-    }
-
+    await settingsRepo.savePrompt(prompt);
     return true;
   } catch (error) {
     console.error("Save prompt error:", error);
@@ -246,16 +139,10 @@ export async function saveNewPrompt(prompt: string) {
   }
 }
 
-/**
- * 🔍 ПОЛУЧИТЬ ТЕКУЩЕЕ СОСТОЯНИЕ АДМИНА
- */
 export function getAdminState(adminId: number) {
   return adminStates.get(adminId);
 }
 
-/**
- * 🗑️ ОЧИСТИТЬ СОСТОЯНИЕ АДМИНА
- */
 export function clearAdminState(adminId: number) {
   adminStates.delete(adminId);
 }

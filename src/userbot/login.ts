@@ -1,36 +1,33 @@
-import { TelegramClient } from "telegram";
+﻿import { TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions";
-// @ts-ignore
-import input from "input";
-import dotenv from "dotenv";
+import { env } from "../config/env";
 
-dotenv.config();
+const input = require("input") as {
+  text(prompt: string): Promise<string>;
+};
 
-const apiId = Number(process.env.API_ID);
-const apiHash = process.env.API_HASH as string;
-// Бўш сессия билан бошлаймиз
 const stringSession = new StringSession("");
 
-(async () => {
-  console.log("📲 Реал профилга уланиш бошланди...");
-  
-  const client = new TelegramClient(stringSession, apiId, apiHash, {
+async function createSession() {
+  console.log("[Userbot Login] Starting MTProto login...");
+
+  const client = new TelegramClient(stringSession, env.API_ID, env.API_HASH, {
     connectionRetries: 5,
   });
 
   await client.start({
-    phoneNumber: async () => await input.text("Телефон рақамингизни киритинг (масалан, +998901234567): "),
-    password: async () => await input.text("2-Step пароль (агар бўлса, йўқса Enter босинг): "),
-    phoneCode: async () => await input.text("Телеграмдан келган 5 хонали кодни киритинг: "),
-    onError: (err) => console.log("Хатолик:", err),
+    phoneNumber: () => input.text("Enter phone number, for example +998901234567: "),
+    password: () => input.text("Enter 2FA password, or press Enter if not enabled: "),
+    phoneCode: () => input.text("Enter the 5-digit code from Telegram: "),
+    onError: (error) => console.log("Login error:", error),
   });
 
-  console.log("\n✅ МУВАФФАҚИЯТЛИ УЛАНДИК!");
-  console.log("👇 МАНА БУ СЕБИЯ КОДИНИ .env ФАЙЛДАГИ SESSION_STRING= ДАН КЕЙИН ҚЎЙИНГ 👇\n");
-  
+  console.log("\n[Userbot Login] Connected successfully.");
+  console.log("Copy this session value into SESSION_STRING in your .env file:\n");
   console.log(client.session.save());
-  
-  console.log("\n👆 КОДНИ НУСХАЛАБ ОЛДИНГИЗМИ? Энди бу файлни ёпишингиз мумкин.");
+
   await client.disconnect();
   process.exit(0);
-})();
+}
+
+void createSession();
