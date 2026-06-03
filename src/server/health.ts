@@ -12,10 +12,12 @@ export function startHealthServer(portToTry: number) {
         server.close();
         startHealthServer(portToTry + 1);
       }, 500);
+    } else {
+      console.error("[System] Health server error:", error);
     }
   });
 
-  server.listen(portToTry, () => {
+  server.listen(portToTry, "0.0.0.0", () => {
     console.log(`[System] Health server running on ${portToTry}`);
   });
 }

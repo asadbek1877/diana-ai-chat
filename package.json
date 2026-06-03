@@ -26,8 +26,8 @@
   "scripts": {
     "build": "tsc",
     "start": "concurrently \"npm run start:bot\" \"npm run start:userbot\"",
-    "start:bot": "ts-node src/index.ts",
-    "start:userbot": "ts-node src/userbot/index.ts",
+    "start:bot": "node dist/index.js",
+    "start:userbot": "node dist/userbot/index.js",
     "dev": "concurrently \"nodemon src/index.ts\" \"nodemon src/userbot/index.ts\"",
     "test": "echo \"Error: no test specified\" && exit 1"
   }
