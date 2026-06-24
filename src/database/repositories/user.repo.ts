@@ -152,6 +152,34 @@ export class UserRepository {
       data: { isPaused },
     });
   }
+
+  // Фойдаланувчининг охирги фаоллик вақтини ва хабар ёзиш рухсатини янгилаш
+  async updateActivity(telegramId: bigint, canMessageFirst: boolean = true) {
+    return prisma.user.update({
+      where: { telegramId },
+      data: {
+        lastActivityAt: new Date(),
+        canMessageFirst: canMessageFirst,
+      },
+    });
+  }
+
+  // Диана ўзи биринчи бўлиб ёзиши мумкин бўлган фойдаланувчиларни топиш
+  // Масалан: охирги марта N кун олдин ёзганларни топиш
+  async findInactiveUsersForProactiveMessaging(daysInactive: number) {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - daysInactive);
+
+    return prisma.user.findMany({
+      where: {
+        canMessageFirst: true, // Фақат рухсати борларга
+        lastActivityAt: {
+          lte: cutoffDate, // cutoffDate дан олдин, яъни эски фаоллик
+        },
+        isPaused: false, // Боти тўхтатилмаган бўлиши керак
+      },
+    });
+  }
 }
 
 export const userRepo = new UserRepository();

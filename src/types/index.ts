@@ -8,6 +8,8 @@ export type AIProviderConfig = {
   model: string;
   systemPrompt: string;
   temperature?: number;
+  imageBase64?: string; // Vision үчін - Base64 расм
+  imageMimeType?: string; // MIME типи (image/jpeg, image/png, и т.д.)
 };
 
 export type AIProviderResponse = {

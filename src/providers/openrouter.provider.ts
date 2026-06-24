@@ -44,6 +44,31 @@ export class OpenRouterProvider implements AIProvider {
     history: AIMessage[],
     config: AIProviderConfig
   ): Promise<AIProviderResponse> {
+    // Агар расм бўлса, Vision моделни ишлатамиз
+    let model = config.model;
+    let userMessage: any = message;
+
+    if (config.imageBase64 && config.imageMimeType) {
+      // Vision модели (OpenRouter'да қўлайлашган)
+      model = "google/gemini-flash-1.5-vision"; // Агар коррози модел айтилса, унини ўзгартириш мумкин
+      
+      // Сўровни Vision форматида шакллантирамиз
+      userMessage = [
+        {
+          type: "text",
+          text: message,
+        },
+        {
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: config.imageMimeType, // "image/jpeg", "image/png", и т.д.
+            data: config.imageBase64,
+          },
+        },
+      ];
+    }
+
     const response = await fetch(OPENROUTER_ENDPOINT, {
       method: "POST",
       headers: {
@@ -51,11 +76,11 @@ export class OpenRouterProvider implements AIProvider {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: config.model,
+        model: model,
         messages: [
           { role: "system", content: config.systemPrompt },
           ...normalizeHistory(history),
-          { role: "user", content: message },
+          { role: "user", content: userMessage },
         ],
         temperature: config.temperature ?? 0.8,
       }),

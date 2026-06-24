@@ -6,6 +6,7 @@ import { isAdminIdValid } from "./bot/middleware/auth";
 import { createMessageRateLimitMiddleware } from "./bot/middleware/rate-limit";
 import { prisma } from "./database/prisma";
 import { startHealthServer } from "./server/health";
+import { ProactiveService } from "./services/proactive.service";
 
 if (!env.BOT_TOKEN) {
   throw new Error("BOT_TOKEN .env fayli ichida topilmadi!");
@@ -62,7 +63,11 @@ process.once("SIGTERM", (signal) => {
 
 startHealthServer(env.PORT);
 bot.start({
-  onStart: (botInfo) => console.log(`[System] Bot connected as @${botInfo.username}`),
+  onStart: (botInfo) => {
+    console.log(`[System] Bot connected as @${botInfo.username}`);
+    // Диананинг proactive (биринчи бўлиб ёзиш) таймери ёқилди!
+    ProactiveService.start();
+  },
 }).catch(async (error) => {
   console.error("[System] Bot start failed:", error);
   await prisma.$disconnect();

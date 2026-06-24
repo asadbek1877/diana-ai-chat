@@ -31,6 +31,8 @@ model User {
 
   createdAt      DateTime @default(now())
   lastSeen       DateTime @updatedAt
+  lastActivityAt DateTime @default(now()) // Охирги марта қачон хабар ёзгани
+  canMessageFirst Boolean  @default(true)  // Диана биринчи бўлиб ёза оладими?
 
   messages       Message[]
   chatLogs       ChatLog[]

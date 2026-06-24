@@ -13,6 +13,8 @@ type GenerateReplyInput = {
   message: string;
   history?: AIMessage[];
   provider?: ProviderName;
+  imageBase64?: string; // Vision үчин - Base64 расм
+  imageMimeType?: string; // MIME типи
 };
 
 const FALLBACK_GROQ_MODEL = "llama-3.1-8b-instant";
@@ -43,6 +45,8 @@ class AIService {
         model: this.getModel(providerName, user?.personalModel, settings?.currentModel),
         systemPrompt: user?.personalPrompt?.trim() || settings?.systemPrompt?.trim() || getDianaPrompt(),
         temperature: 0.8,
+        imageBase64: input.imageBase64, // Vision үчін
+        imageMimeType: input.imageMimeType, // MIME типи
       });
 
       const tokensUsed = Number(response.tokensUsed || 0);

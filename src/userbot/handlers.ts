@@ -18,6 +18,8 @@ export type SenderInfo = {
 export type QueuedUserMessage = {
   texts: string[];
   messageIds: number[];
+  imageBase64?: string; // Vision үчин - Base64 расм
+  imageMimeType?: string; // MIME типи (image/jpeg, image/png, и т.д.)
   timer: NodeJS.Timeout;
   ttlTimer: NodeJS.Timeout;
   sender: SenderInfo;
@@ -43,7 +45,7 @@ class UserMessageQueue {
   private queues = new Map();
   constructor(private readonly processQueue: (telegramId: bigint) => Promise<void>) {}
 
-  enqueue(input: { telegramId: bigint; text: string; messageId: number; sender: SenderInfo; messageObj: any }) {
+  enqueue(input: { telegramId: bigint; text: string; messageId: number; sender: SenderInfo; messageObj: any; imageBase64?: string; imageMimeType?: string }) {
     const existing = this.queues.get(input.telegramId);
     if (existing) {
       clearTimeout(existing.timer);
@@ -51,6 +53,11 @@ class UserMessageQueue {
       existing.texts.push(input.text);
       existing.messageIds.push(input.messageId);
       existing.lastMessage = input.messageObj; // Доим энг сўнгги хабар объектини сақлаймиз
+      // Агар нови расм бўлса, унинг устига чўйамиз (последний image берилади)
+      if (input.imageBase64) {
+        existing.imageBase64 = input.imageBase64;
+        existing.imageMimeType = input.imageMimeType;
+      }
       existing.timer = setTimeout(() => this.processQueue(input.telegramId), 4000);
       existing.ttlTimer = setTimeout(() => this.clear(input.telegramId), 5 * 60 * 1000);
       return;
@@ -61,6 +68,8 @@ class UserMessageQueue {
       messageIds: [input.messageId],
       sender: input.sender,
       lastMessage: input.messageObj,
+      imageBase64: input.imageBase64,
+      imageMimeType: input.imageMimeType,
       timer: setTimeout(() => this.processQueue(input.telegramId), 4000),
       ttlTimer: setTimeout(() => this.clear(input.telegramId), 5 * 60 * 1000),
     });
@@ -84,12 +93,14 @@ class UserMessageQueue {
   }
 }
 
-async function buildReply(telegramId: bigint, message: string, history: Array<{ role: string; content: string }>) {
+async function buildReply(telegramId: bigint, message: string, history: Array<{ role: string; content: string }>, imageBase64?: string, imageMimeType?: string) {
   let reply = await aiService.generateReply({
     telegramId,
     message,
     history,
     provider: "openrouter",
+    imageBase64, // Vision модели учун расм
+    imageMimeType,
   });
 
   const query = extractSearchQuery(reply);
@@ -119,6 +130,34 @@ async function sendAdminNotifications(sender: SenderInfo, userMessage: string, b
   }
 }
 
+/**
+ * Телеграм расмини Base64'ға ўгириш
+ */
+async function downloadImageAsBase64(message: any): Promise<{ base64: string; mimeType: string } | null> {
+  try {
+    if (!message.photo) return null;
+
+    // downloadMedia ўз ичида энг юқори сифатли расмни автоматик танлайди
+    const buffer = await userbotClient.downloadMedia(message);
+    
+    if (!buffer) {
+      console.warn("[Userbot] Расм юклаш катта буйилди - buffer null");
+      return null;
+    }
+
+    // Base64'га ўгириш
+    const base64String = buffer.toString("base64");
+    
+    // MIME типини аниқлаш (одатан JPEG)
+    const mimeType = "image/jpeg";
+
+    return { base64: base64String, mimeType };
+  } catch (error) {
+    console.error("[Userbot] Расм юклашда хатолик:", error);
+    return null;
+  }
+}
+
 async function processUserQueue(queueManager: UserMessageQueue, telegramId: bigint) {
   const queue = queueManager.consume(telegramId);
   if (!queue) return;
@@ -135,6 +174,20 @@ async function processUserQueue(queueManager: UserMessageQueue, telegramId: bigi
     });
 
     if (user.isPaused) return;
+
+    // Юзер ухлаяптими ёки бандми? Текширамиз.
+    const lowerText = combinedText.toLowerCase();
+    const isBusyOrSleeping = 
+      lowerText.includes("спокойной ночи") || 
+      lowerText.includes("сплю") || 
+      lowerText.includes("спать") || 
+      lowerText.includes("занят") || 
+      lowerText.includes("позже") || 
+      lowerText.includes("потом");
+
+    // Агар банд бўлса, Диана кейин ўзи биринчи бўлиб ёзмайди (canMessageFirst = false)
+    // Агар оддий хабар бўлса, ҳаммаси жойида (canMessageFirst = true)
+    await userRepo.updateActivity(telegramId, !isBusyOrSleeping);
 
     await userbotClient.invoke(new Api.account.UpdateStatus({ offline: false }));
     await new Promise((resolve) => setTimeout(resolve, Math.max(2000, Math.min(6000, combinedText.length * 50))));
@@ -155,7 +208,7 @@ async function processUserQueue(queueManager: UserMessageQueue, telegramId: bigi
     // Базадан тарихни олиш ва AI га бериш
     const recentMessages = await messageRepo.findRecentByUserId(user.id, 10);
     const history = [...recentMessages].reverse();
-    const rawReply = await buildReply(telegramId, combinedText, history);
+    const rawReply = await buildReply(telegramId, combinedText, history, queue.imageBase64, queue.imageMimeType);
     const { hasLikeIntent, text } = extractLikeIntent(formatDianaText(rawReply));
 
     await messageRepo.saveConversation(user.id, combinedText, text, "telegram_userbot");
@@ -209,8 +262,11 @@ export function registerUserbotHandlers(options: RegisterUserbotHandlersOptions)
   userbotClient.addEventHandler(async (event: NewMessageEvent) => {
     const message = event.message;
     const text = typeof message.text === "string" ? message.text.trim() : null;
+    
+    // Расм бор ёки йўқ эканини текширамиз
+    const hasPhoto = message.photo !== null && message.photo !== undefined;
 
-    if (!message.isPrivate || message.out || !text) return;
+    if (!message.isPrivate || message.out || (!text && !hasPhoto)) return;
 
     const senderEntity = await message.getSender() as any;
     if (!senderEntity || !senderEntity.id) return;
@@ -224,12 +280,27 @@ export function registerUserbotHandlers(options: RegisterUserbotHandlersOptions)
       username: (senderEntity.username || senderEntity.user?.username) ? `@${senderEntity.username || senderEntity.user?.username}` : null,
     };
 
+    // Агар расм юборилса, уни Base64'га ўгирамиз
+    let imageBase64: string | undefined;
+    let imageMimeType: string | undefined;
+    
+    if (hasPhoto) {
+      const imageData = await downloadImageAsBase64(message);
+      if (imageData) {
+        imageBase64 = imageData.base64;
+        imageMimeType = imageData.mimeType;
+        console.log(`[Userbot] Фото юклаб олинди (${message.photo!.id}), Base64 узунлиги: ${imageBase64.length} байт`);
+      }
+    }
+
     queueManager.enqueue({
       telegramId,
-      text,
+      text: text || "", // Агар матн бўлмаса, бўш сатр
       messageId: message.id,
       sender,
-      messageObj: message, // Бутун сир мана шу объекда яширинган
+      messageObj: message,
+      imageBase64, // Vision учун Base64
+      imageMimeType, // MIME типи
     });
   }, new NewMessage({}));
 }
