@@ -1,12 +1,22 @@
-﻿import { Api } from "telegram";
+import { Api } from "telegram";
 import { NewMessage, NewMessageEvent } from "telegram/events";
 import { searchInternet } from "../ai/search";
 import { messageRepo } from "../database/repositories/message.repo";
 import { userRepo } from "../database/repositories/user.repo";
+import { notifyAdmin, notifyAdminGroup } from "../logger/chatLogger";
 import { aiService } from "../services/ai.service";
 import { buildSearchAugmentedPrompt, extractLikeIntent, extractSearchQuery, formatDianaText, splitReplyIntoMessages } from "../services/text-formatter";
 import { userbotClient } from "./client";
 import { SenderInfo, UserMessageQueue } from "./queue";
+
+// Lazy reference to the Bot API instance for sending admin notifications.
+// Set by `setNotificationBot()` during startup.
+import type { Bot } from "grammy";
+let notificationBot: Bot<any> | null = null;
+
+export function setNotificationBot(bot: Bot<any>) {
+  notificationBot = bot;
+}
 
 type TelegramSender = {
   id?: unknown;
@@ -124,6 +134,37 @@ async function buildReply(telegramId: bigint, message: string, history: Array<{ 
   });
 }
 
+/**
+ * Send admin notifications about a conversation.
+ * Uses the Bot API instance (Client B) purely as a transport for delivering logs.
+ */
+async function sendAdminNotifications(
+  sender: SenderInfo,
+  userMessage: string,
+  botResponse: string
+) {
+  if (!notificationBot) {
+    console.warn("[Userbot] No notification bot configured, skipping admin notification");
+    return;
+  }
+
+  const userInfo = {
+    firstName: sender.firstName,
+    username: sender.username?.replace("@", "") || undefined,
+    telegramId: sender.id.toString(),
+  };
+
+  try {
+    // Send detailed log to admin's DM
+    await notifyAdmin(notificationBot, userMessage, botResponse, userInfo);
+
+    // Send short notification to admin group (if configured)
+    await notifyAdminGroup(notificationBot, userMessage, botResponse, userInfo);
+  } catch (error) {
+    console.error("[Userbot] Failed to send admin notification:", error);
+  }
+}
+
 async function processUserQueue(queueManager: UserMessageQueue, telegramId: bigint) {
   const queue = queueManager.consume(telegramId);
   if (!queue) return;
@@ -163,8 +204,12 @@ async function processUserQueue(queueManager: UserMessageQueue, telegramId: bigi
       }
     }
 
+    // Send the AI response from the REAL account (Userbot/MTProto)
     await sendReplyMessages(queue.chatId, text);
     await userbotClient.invoke(new Api.account.UpdateStatus({ offline: true }));
+
+    // Send log notification to admin via Bot API (Client B is just a transport)
+    await sendAdminNotifications(queue.sender, combinedText, text);
   } catch (error) {
     console.error("[Userbot] Failed to process message:", error);
   } finally {
@@ -197,5 +242,3 @@ export function registerUserbotHandlers(options: RegisterUserbotHandlersOptions)
     });
   }, new NewMessage({}));
 }
-
-

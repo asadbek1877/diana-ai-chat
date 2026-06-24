@@ -1,0 +1,7 @@
+◇ injected env (9) from .env // tip: ◈ encrypted .env [www.dotenvx.com]
+[33m[2026-05-31T04:17:32.707] [INFO] - [Running gramJS version 2.26.21][0m
+[System] Connecting MTProto userbot...
+[33m[2026-05-31T04:17:32.951] [INFO] - [Connecting to 149.154.167.50:80/TCPFull...][0m
+[33m[2026-05-31T04:17:33.278] [INFO] - [Connection to 149.154.167.50:80/TCPFull complete!][0m
+[33m[2026-05-31T04:17:33.282] [INFO] - [Using LAYER 198 for initial connect][0m
+[System] MTProto userbot connected.

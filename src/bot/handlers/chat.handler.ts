@@ -1,31 +1,18 @@
 import { Bot } from "grammy";
 import { env } from "../../config/env";
 import { chatService } from "../../services/chat.service";
-import { notifyAdmin } from "../../logger/chatLogger";
-import { simulateHumanBehavior } from "../simulation";
 import { handleAdminTextState } from "./admin.handler";
 
 function isTextMessage(ctx: any) {
   return Boolean(ctx.message && "text" in ctx.message && typeof ctx.message.text === "string");
 }
 
-function getMessageText(ctx: any) {
-  return ctx.message?.text || ctx.message?.caption || "[Расм юборди]";
-}
-
-async function sendHumanizedReply(ctx: any, reply: string) {
-  const sentences = reply.split("\n").filter((sentence) => sentence.trim().length > 0);
-
-  for (const sentence of sentences) {
-    await ctx.api.sendChatAction(ctx.chat!.id, "typing");
-    const textToSend = sentence.trim().replace(/[.!]+$/, "");
-    if (!textToSend) continue;
-
-    await new Promise((resolve) => setTimeout(resolve, Math.max(1500, textToSend.length * 80)));
-    await ctx.reply(textToSend);
-  }
-}
-
+/**
+ * Admin group reply handler.
+ * When admin replies to a log message in the admin group,
+ * this handler forwards the admin's text to the user via Bot API
+ * and pauses AI for that user (or resumes it with /ai).
+ */
 export async function handleAdminGroupReply(ctx: any) {
   if (!ctx.message?.reply_to_message || !ctx.message.text) return;
 
@@ -41,51 +28,34 @@ export async function handleAdminGroupReply(ctx: any) {
     return;
   }
 
+  // Admin manually replies to a user — send via Bot API (this is intentional,
+  // admin overrides are sent from the bot, not the userbot)
   if (result.textToSend) {
     await ctx.api.sendMessage(Number(result.targetTelegramId), result.textToSend);
   }
 }
 
-export async function processUserMessage(ctx: any, bot: Bot<any>) {
-  if (!ctx.from || !ctx.chat || ctx.chat.type !== "private") return;
-
-  const tgId = BigInt(ctx.from.id);
-  const userText = getMessageText(ctx);
-  const shouldReply = await simulateHumanBehavior(ctx, userText.length);
-
-  const result = await chatService.processUserMessage({
-    telegramId: tgId,
-    firstName: ctx.from.first_name,
-    username: ctx.from.username,
-    text: userText,
-  });
-
-  if (!result) return;
-
-  await ctx.api.sendMessage(chatService.getAdminGroupId(), result.adminNotification, {
-    parse_mode: "HTML",
-  });
-
-  if (!shouldReply) return;
-
-  await notifyAdmin(bot, userText, result.reply, {
-    firstName: ctx.from.first_name,
-    username: ctx.from.username,
-    telegramId: String(tgId),
-  });
-
-  await sendHumanizedReply(ctx, result.reply);
-}
-
-export async function onMessage(ctx: any, bot: Bot<any>) {
+/**
+ * Main message router for Client B (Bot API).
+ *
+ * This handler does NOT process regular user messages for AI.
+ * Regular user conversations are handled EXCLUSIVELY by Client A (Userbot/MTProto).
+ *
+ * This handler only:
+ * 1. Routes admin group replies
+ * 2. Handles admin text input states (e.g. waiting for new model/prompt)
+ */
+export async function onMessage(ctx: any, _bot: Bot<any>) {
   try {
     if (!ctx.message || !ctx.from || !ctx.chat) return;
 
+    // Admin group replies (admin manually responds to a user via the bot)
     if (ctx.chat.id === env.ADMIN_GROUP_ID) {
       await handleAdminGroupReply(ctx);
       return;
     }
 
+    // Admin text state handling (waiting for model name, prompt, etc.)
     if (isTextMessage(ctx)) {
       const text = (ctx.message as { text: string }).text.trim();
       if (!text.startsWith("/") && (await handleAdminTextState(ctx, text))) {
@@ -93,7 +63,8 @@ export async function onMessage(ctx: any, bot: Bot<any>) {
       }
     }
 
-    await processUserMessage(ctx, bot);
+    // All other messages from regular users are IGNORED by Client B.
+    // Client A (Userbot) handles user conversations via MTProto.
   } catch (error) {
     console.error("Chat handler error:", error);
   }
@@ -101,9 +72,6 @@ export async function onMessage(ctx: any, bot: Bot<any>) {
 
 export function registerChatHandlers(bot: Bot<any>) {
   bot.on("message:text", async (ctx) => {
-    await onMessage(ctx, bot);
-  });
-  bot.on("message:photo", async (ctx) => {
     await onMessage(ctx, bot);
   });
 }
