@@ -9,8 +9,6 @@ import { buildSearchAugmentedPrompt, extractLikeIntent, extractSearchQuery, form
 import { userbotClient } from "./client";
 import { SenderInfo, UserMessageQueue } from "./queue";
 
-// Lazy reference to the Bot API instance for sending admin notifications.
-// Set by `setNotificationBot()` during startup.
 import type { Bot } from "grammy";
 let notificationBot: Bot<any> | null = null;
 
@@ -134,10 +132,6 @@ async function buildReply(telegramId: bigint, message: string, history: Array<{ 
   });
 }
 
-/**
- * Send admin notifications about a conversation.
- * Uses the Bot API instance (Client B) purely as a transport for delivering logs.
- */
 async function sendAdminNotifications(
   sender: SenderInfo,
   userMessage: string,
@@ -155,10 +149,7 @@ async function sendAdminNotifications(
   };
 
   try {
-    // Send detailed log to admin's DM
     await notifyAdmin(notificationBot, userMessage, botResponse, userInfo);
-
-    // Send short notification to admin group (if configured)
     await notifyAdminGroup(notificationBot, userMessage, botResponse, userInfo);
   } catch (error) {
     console.error("[Userbot] Failed to send admin notification:", error);
@@ -182,7 +173,10 @@ async function processUserQueue(queueManager: UserMessageQueue, telegramId: bigi
       platform: "TELEGRAM_USERBOT",
     });
 
-    if (user.isPaused) return;
+    if (user.isPaused) {
+      console.log(`[DEBUG] Фойдаланувчи пауза қилинган: ${telegramId}`);
+      return;
+    }
 
     await userbotClient.invoke(new Api.account.UpdateStatus({ offline: false }));
     await new Promise((resolve) => setTimeout(resolve, Math.max(2000, Math.min(6000, combinedText.length * 50))));
@@ -204,12 +198,10 @@ async function processUserQueue(queueManager: UserMessageQueue, telegramId: bigi
       }
     }
 
-    // Send the AI response from the REAL account (Userbot/MTProto)
     await sendReplyMessages(queue.chatId, text);
     await userbotClient.invoke(new Api.account.UpdateStatus({ offline: true }));
-
-    // Send log notification to admin via Bot API (Client B is just a transport)
     await sendAdminNotifications(queue.sender, combinedText, text);
+    console.log(`[DEBUG] Жавоб муваффақиятли жўнатилди!`);
   } catch (error) {
     console.error("[Userbot] Failed to process message:", error);
   } finally {
@@ -226,12 +218,27 @@ export function registerUserbotHandlers(options: RegisterUserbotHandlersOptions)
     const message = event.message;
     const text = getMessageText(event);
 
-    if (!message.isPrivate || message.out || !text) return;
+    console.log(`[DEBUG] Янги ҳодиса! Текст: "${text}", isPrivate: ${message.isPrivate}, out: ${message.out}`);
+
+    if (!message.isPrivate || message.out || !text) {
+      console.log(`[DEBUG] Хабар игнор қилинди.`);
+      return;
+    }
 
     const sender = normalizeSender(await message.getSender());
     const chatId = normalizeChatId(message.chatId);
-    if (!sender || chatId === null) return;
-    if (options.incomingMessageLimiter.isLimited(sender.id)) return;
+    
+    if (!sender || chatId === null) {
+      console.log(`[DEBUG] Sender ёки ChatId топилмади.`);
+      return;
+    }
+    
+    if (options.incomingMessageLimiter.isLimited(sender.id)) {
+      console.log(`[DEBUG] Спам-фильтр блоклади: ${sender.id}`);
+      return;
+    }
+
+    console.log(`[DEBUG] Хабар қабул қилинди ва навбатга қўшилди: ${text}`);
 
     queueManager.enqueue({
       telegramId: sender.id,
@@ -242,3 +249,4 @@ export function registerUserbotHandlers(options: RegisterUserbotHandlersOptions)
     });
   }, new NewMessage({}));
 }
+

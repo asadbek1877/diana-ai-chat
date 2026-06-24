@@ -3,29 +3,17 @@ import { env } from "../config/env";
 import { createRateLimiter } from "../utils/rate-limit";
 import { startUserbotClient } from "./client";
 import { registerUserbotHandlers, setNotificationBot } from "./handlers";
-import { registerChatHandlers } from "../bot/handlers/chat.handler";
 
 const incomingMessageLimiter = createRateLimiter(3_000);
 
 async function startUserbot() {
-  // Create a standalone Bot API instance ONLY for sending admin notifications.
-  // This bot DOES poll for updates to handle admin commands and messages.
+  // Ботни (Б) фақат маълумот (лог) жўнатиш учун яратамиз.
+  // Polling қилмаймиз, чунки уни npm run start:bot ўзи қиляпти.
   if (env.BOT_TOKEN) {
     const notifBot = new Bot(env.BOT_TOKEN);
     await notifBot.init();
     setNotificationBot(notifBot);
-    
-    // Register chat handlers for admin commands and admin group replies
-    registerChatHandlers(notifBot);
-    
-    // Start polling for updates
-    notifBot.start({
-      onStart: (botInfo) => {
-        console.log(`[Bot API] Admin Bot is running as @${botInfo.username}`);
-      }
-    });
-    
-    console.log("[Userbot] Notification bot initialized with handlers and polling started.");
+    console.log("[Userbot] Notification bot initialized (log transport only).");
   } else {
     console.warn("[Userbot] BOT_TOKEN not set, admin notifications disabled.");
   }
