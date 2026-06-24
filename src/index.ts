@@ -4,10 +4,11 @@ import { registerAdminHandlers } from "./bot/handlers/admin.handler";
 import { registerChatHandlers } from "./bot/handlers/chat.handler";
 import { isAdminIdValid } from "./bot/middleware/auth";
 import { createMessageRateLimitMiddleware } from "./bot/middleware/rate-limit";
-import { prisma } from "./database/prisma";
-import { startHealthServer } from "./server/health";
+import { prisma, pool } from "./database/prisma";
+import { startHealthServer, getHealthServer } from "./server/health";
 import { ProactiveService } from "./services/proactive.service";
 import { SelfLearningService } from "./services/self-learning.service";
+import { setCircuitBreakerCheck } from "./services/ai.service";
 
 if (!env.BOT_TOKEN) {
   throw new Error("BOT_TOKEN .env fayli ichida topilmadi!");
@@ -23,8 +24,39 @@ bot.use(createMessageRateLimitMiddleware());
 registerAdminHandlers(bot);
 registerChatHandlers(bot);
 
-bot.catch((error) => console.error("Global bot error:", error.error));
+// === Audit #6: Circuit breaker — при 429 от API прекращаем запросы на 60 сек ===
+let circuitOpen = false;
+export function isCircuitOpen() {
+  return circuitOpen;
+}
+setCircuitBreakerCheck(isCircuitOpen);
 
+bot.catch((error) => {
+  const errMsg = String((error.error as any)?.message || error.error || "");
+  console.error("Global bot error:", error.error);
+
+  if (errMsg.includes("429") || errMsg.includes("Too Many Requests")) {
+    circuitOpen = true;
+    console.warn("[System] Circuit breaker OPEN — API rate limited, pausing for 60s");
+    setTimeout(() => {
+      circuitOpen = false;
+      console.log("[System] Circuit breaker CLOSED — resuming requests");
+    }, 60_000);
+  }
+});
+
+// === Audit #7: Обработка необработанных ошибок — без этого любой unhandled throw = мгновенный crash ===
+process.on("uncaughtException", (err) => {
+  console.error("FATAL uncaughtException:", err);
+  // Graceful shutdown — даём 3 сек на завершение
+  setTimeout(() => process.exit(1), 3000);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("FATAL unhandledRejection:", reason);
+});
+
+// === Audit #8: Graceful shutdown — закрываем ВСЕ ресурсы ===
 let isShuttingDown = false;
 
 async function shutdown(signal: NodeJS.Signals) {
@@ -43,7 +75,19 @@ async function shutdown(signal: NodeJS.Signals) {
     await prisma.$disconnect();
   } catch (error) {
     console.error("[System] Failed to disconnect Prisma:", error);
-    process.exit(1);
+  }
+
+  // Audit #8: Закрываем pg Pool — без этого zombie connections к Neon
+  try {
+    await pool.end();
+  } catch (error) {
+    console.error("[System] Failed to close pg pool:", error);
+  }
+
+  // Закрываем health server
+  const healthServer = getHealthServer();
+  if (healthServer) {
+    healthServer.close();
   }
 
   process.exit(0);

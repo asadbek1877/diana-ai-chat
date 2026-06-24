@@ -54,6 +54,7 @@ export class GroqProvider implements AIProvider {
           { role: "user", content: message },
         ],
         temperature: config.temperature ?? 0.8,
+        max_tokens: 300, // Audit #3: Ограничение стоимости — без этого AI может генерировать 10000+ токенов
       }),
     });
 

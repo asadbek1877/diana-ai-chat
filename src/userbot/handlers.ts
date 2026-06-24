@@ -15,6 +15,14 @@ export type SenderInfo = {
   username: string | null;
 };
 
+// === Audit #4: Per-user cooldown (мин 30 сек между ответами) ===
+const lastReplyTime = new Map<bigint, number>();
+const USER_COOLDOWN_MS = 30_000;
+
+// === Audit #5: Лимит поисков в день per-user ===
+const searchCountPerUser = new Map<bigint, number>();
+const MAX_SEARCHES_PER_DAY = 10;
+
 // Навбатда хабарнинг матнидан ташқари, ўзини (Telegram Message) ҳам сақлаймиз
 export type QueuedUserMessage = {
   texts: string[];
@@ -107,6 +115,14 @@ async function buildReply(telegramId: bigint, message: string, history: Array<{ 
   const query = extractSearchQuery(reply);
   if (!query) return reply;
 
+  // === Audit #5: Проверка лимита поисков ===
+  const currentSearchCount = searchCountPerUser.get(telegramId) || 0;
+  if (currentSearchCount >= MAX_SEARCHES_PER_DAY) {
+    // Лимит исчерпан — отвечаем без поиска
+    return reply;
+  }
+  searchCountPerUser.set(telegramId, currentSearchCount + 1);
+
   const searchResults = await searchInternet(query);
   return aiService.generateReply({
     telegramId,
@@ -162,6 +178,12 @@ async function downloadImageAsBase64(message: any): Promise<{ base64: string; mi
 async function processUserQueue(queueManager: UserMessageQueue, telegramId: bigint) {
   const queue = queueManager.consume(telegramId);
   if (!queue) return;
+
+  // === Audit #4: Per-user cooldown — минимум 30 сек между ответами ===
+  const now = Date.now();
+  const lastReply = lastReplyTime.get(telegramId) || 0;
+  if (now - lastReply < USER_COOLDOWN_MS) return;
+  lastReplyTime.set(telegramId, now);
 
   const combinedText = queue.texts.join("\n");
   const lastMsg = queue.lastMessage; // Энг сўнгги хабар объекти

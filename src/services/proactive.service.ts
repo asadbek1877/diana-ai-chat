@@ -48,7 +48,7 @@ export class ProactiveService {
           }
 
           // Telegram орқали хабарни фойдаланувчига жўнатамиз
-          const peer = await userbotClient.getInputEntity(telegramId);
+          const peer = await userbotClient.getInputEntity(telegramId.toString());
           
           // "Ёзяпти..." эффектини чиқарамиз
           await userbotClient.invoke(new Api.messages.SetTyping({ peer, action: new Api.SendMessageTypingAction() }));

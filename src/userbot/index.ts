@@ -4,6 +4,15 @@ import { createRateLimiter } from "../utils/rate-limit";
 import { startUserbotClient } from "./client";
 import { registerUserbotHandlers, setNotificationBot } from "./handlers";
 
+// === Audit #7: Обработка необработанных ошибок в userbot процессе ===
+process.on("uncaughtException", (err) => {
+  console.error("[Userbot] FATAL uncaughtException:", err);
+  setTimeout(() => process.exit(1), 3000);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[Userbot] FATAL unhandledRejection:", reason);
+});
 const incomingMessageLimiter = createRateLimiter(3_000);
 
 async function startUserbot() {

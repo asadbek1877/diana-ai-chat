@@ -1,4 +1,8 @@
 node_modules/
 dist/
 .env
+.env.*
+*.log
+logs/
 /src/generated/prisma
+dataset.jsonl

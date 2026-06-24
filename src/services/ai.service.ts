@@ -21,6 +21,16 @@ type GenerateReplyInput = {
 const FALLBACK_GROQ_MODEL = "llama-3.1-8b-instant";
 const FALLBACK_OPENROUTER_MODEL = "meta-llama/llama-3-8b-instruct";
 
+// === Audit #2: Дневной лимит токенов per-user ===
+const MAX_DAILY_TOKENS = 50_000;
+
+// === Audit #6: Circuit breaker интеграция ===
+let isCircuitOpenFn: (() => boolean) | null = null;
+
+export function setCircuitBreakerCheck(fn: () => boolean) {
+  isCircuitOpenFn = fn;
+}
+
 class AIService {
   private providers: Record<ProviderName, AIProvider> = {
     groq: groqProvider,
@@ -29,6 +39,11 @@ class AIService {
 
   async generateReply(input: GenerateReplyInput) {
     try {
+      // === Audit #6: Проверка circuit breaker ===
+      if (isCircuitOpenFn && isCircuitOpenFn()) {
+        return "Сервер перегружен, попробуйте через минутку 😔";
+      }
+
       const telegramId = typeof input.telegramId === "bigint" ? input.telegramId : BigInt(input.telegramId.trim());
       const providerName = input.provider ?? "groq";
       const [user, settings] = await Promise.all([
@@ -38,6 +53,11 @@ class AIService {
 
       if (settings?.isBotActive === false) {
         return "I am sleeping right now. The admin temporarily disabled me.";
+      }
+
+      // === Audit #2: Проверка дневного лимита токенов ===
+      if (user && user.tokensUsed > MAX_DAILY_TOKENS) {
+        return "Ты слишком много писал сегодня, отдохни немного 😴";
       }
 
       const apiKey = this.getApiKey(providerName);
