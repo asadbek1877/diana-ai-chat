@@ -84,3 +84,27 @@ model UserProfile {
 
   user             User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
+
+// Диананинг хатолари ва ютуқларини йиғиб борувчи жадвал
+model InteractionLog {
+  id          String   @id @default(cuid())
+  userId      String
+  userMessage String   @db.Text // Йигитнинг гапи
+  dianaReply  String   @db.Text // Диананинг жавоби
+  isPositive  Boolean  // true = ютуқ (лайк), false = хато (бот деди)
+  isAnalyzed  Boolean  @default(false) // Суддан ўтганми?
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([isAnalyzed])
+}
+
+// "Ички суд" орқали чиқарилган олтин қоидалар жадвали
+model LearnedRule {
+  id        String   @id @default(cuid())
+  ruleText  String   @db.Text // Қоида матни
+  isActive  Boolean  @default(true) // Диана бунга амал қиляптими?
+  createdAt DateTime @default(now())
+
+  @@index([isActive])
+}

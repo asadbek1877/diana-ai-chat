@@ -7,6 +7,7 @@ import { createMessageRateLimitMiddleware } from "./bot/middleware/rate-limit";
 import { prisma } from "./database/prisma";
 import { startHealthServer } from "./server/health";
 import { ProactiveService } from "./services/proactive.service";
+import { SelfLearningService } from "./services/self-learning.service";
 
 if (!env.BOT_TOKEN) {
   throw new Error("BOT_TOKEN .env fayli ichida topilmadi!");
@@ -67,6 +68,8 @@ bot.start({
     console.log(`[System] Bot connected as @${botInfo.username}`);
     // Диананинг proactive (биринчи бўлиб ёзиш) таймери ёқилди!
     ProactiveService.start();
+    // Диананинг ўзини-ўзи ўқитиш (Self-Learning) тизими фаоллашди!
+    SelfLearningService.start();
   },
 }).catch(async (error) => {
   console.error("[System] Bot start failed:", error);

@@ -1,6 +1,7 @@
 import { env } from "../config/env";
 import { settingsRepo } from "../database/repositories/settings.repo";
 import { userRepo } from "../database/repositories/user.repo";
+import { LearningRepo } from "../database/repositories/learning.repo";
 import { getDianaPrompt } from "../ai/prompt";
 import { groqProvider } from "../providers/groq.provider";
 import { openRouterProvider } from "../providers/openrouter.provider";
@@ -40,10 +41,24 @@ class AIService {
       }
 
       const apiKey = this.getApiKey(providerName);
+      
+      // === ДИНАМИК ХОТИРАНИ ҚЎШИШ ===
+      let basePrompt = user?.personalPrompt?.trim() || settings?.systemPrompt?.trim() || getDianaPrompt();
+      
+      const learnedRules = await LearningRepo.getActiveRules();
+      if (learnedRules.length > 0) {
+        basePrompt += `\n\n# ВАЖНО! ТВОЙ ОПЫТ ИЗ ПРОШЛЫХ ДИАЛОГОВ:\n`;
+        learnedRules.forEach((rule: any, index: number) => {
+          basePrompt += `${index + 1}. ${rule.ruleText}\n`;
+        });
+        basePrompt += `(Строго соблюдай эти правила, ты вывела их из своих ошибок!)`;
+      }
+      // =================================
+      
       const response = await this.providers[providerName].ask(input.message, input.history ?? [], {
         apiKey,
         model: this.getModel(providerName, user?.personalModel, settings?.currentModel),
-        systemPrompt: user?.personalPrompt?.trim() || settings?.systemPrompt?.trim() || getDianaPrompt(),
+        systemPrompt: basePrompt,
         temperature: 0.8,
         imageBase64: input.imageBase64, // Vision үчін
         imageMimeType: input.imageMimeType, // MIME типи

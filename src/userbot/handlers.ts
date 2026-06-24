@@ -3,6 +3,7 @@ import { NewMessage, NewMessageEvent } from "telegram/events";
 import { searchInternet } from "../ai/search";
 import { messageRepo } from "../database/repositories/message.repo";
 import { userRepo } from "../database/repositories/user.repo";
+import { LearningRepo } from "../database/repositories/learning.repo";
 import { notifyAdmin, notifyAdminGroup } from "../logger/chatLogger";
 import { aiService } from "../services/ai.service";
 import { buildSearchAugmentedPrompt, extractLikeIntent, extractSearchQuery, formatDianaText, splitReplyIntoMessages } from "../services/text-formatter";
@@ -208,6 +209,37 @@ async function processUserQueue(queueManager: UserMessageQueue, telegramId: bigi
     // Базадан тарихни олиш ва AI га бериш
     const recentMessages = await messageRepo.findRecentByUserId(user.id, 10);
     const history = [...recentMessages].reverse();
+    
+    // === SELF-LEARNING: Сигналларни текшириш ===
+    const lowerMsg = combinedText.toLowerCase();
+    
+    // 1. Салбий сигналлар (Жазо)
+    const isNegative = 
+      lowerMsg.includes("ты бот") || 
+      lowerMsg.includes("робот") || 
+      lowerMsg.includes("нейросеть") || 
+      lowerMsg.includes("бред") ||
+      lowerMsg.includes("тупая");
+
+    // 2. Ижобий сигналлар (Мукофот)
+    const isPositive = 
+      lowerMsg.includes("❤️") || 
+      lowerMsg.includes("🔥") || 
+      lowerMsg.includes("хаха") || 
+      lowerMsg.includes("ахах") || 
+      lowerMsg.includes("класс");
+
+    // Агар хабарда сигнал бўлса ва базада Диананинг олдинги жавоби бўлса, уни сақлаймиз.
+    if (isNegative || isPositive) {
+      // Базадан Диананинг охирги ёзган хабарини топамиз (шу гапга сабаб бўлган хабар)
+      const lastDianaMessage = await messageRepo.findRecentByUserId(user.id, 1);
+      const dianaText = lastDianaMessage[0]?.content || "номаълум хабар";
+
+      await LearningRepo.logInteraction(user.id, combinedText, dianaText, isPositive);
+      console.log(`[Self-Learning] Сигнал ушланди: ${isPositive ? "ЮТУҚ ✓" : "ХАТО ✗"}`);
+    }
+    // ===========================================
+    
     const rawReply = await buildReply(telegramId, combinedText, history, queue.imageBase64, queue.imageMimeType);
     const { hasLikeIntent, text } = extractLikeIntent(formatDianaText(rawReply));
 
