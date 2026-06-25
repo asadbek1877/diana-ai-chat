@@ -64,14 +64,26 @@ class AIService {
       
       // === ДИНАМИК ХОТИРАНИ ҚЎШИШ ===
       let basePrompt = user?.personalPrompt?.trim() || settings?.systemPrompt?.trim() || getDianaPrompt();
+
+      // === Persona Switcher ===
+      const personaModifiers: Record<string, string> = {
+        sweet: "\n\nБудь очень милой, заботливой, используй ласковые слова и милые эмодзи. Ты влюблена.",
+        sassy: "\n\nБудь дерзкой, саркастичной, слегка подкалывай парня. Знай себе цену.",
+        cold: "\n\nОтвечай очень коротко, сухо, без эмодзи. Ты обижена или тебе неинтересно.",
+        auto: "\n\nОбщайся естественно, как обычная девушка, подстраивайся под тон собеседника."
+      };
+
+      const pMode = (user as any)?.personaMode || "auto";
+      if (personaModifiers[pMode]) {
+         basePrompt += personaModifiers[pMode];
+      }
       
       const learnedRules = await LearningRepo.getActiveRules();
       if (learnedRules.length > 0) {
-        basePrompt += `\n\n# ВАЖНО! ТВОЙ ОПЫТ ИЗ ПРОШЛЫХ ДИАЛОГОВ:\n`;
-        learnedRules.forEach((rule: any, index: number) => {
-          basePrompt += `${index + 1}. ${rule.ruleText}\n`;
+        basePrompt += `\n\nДополнительные факты о тебе на данный момент:\n`;
+        learnedRules.forEach((rule: any) => {
+          basePrompt += `- ${rule.ruleText}\n`;
         });
-        basePrompt += `(Строго соблюдай эти правила, ты вывела их из своих ошибок!)`;
       }
       // =================================
       

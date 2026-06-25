@@ -24,10 +24,14 @@ model User {
   platform       String   @default("TELEGRAM")
   isPaused       Boolean  @default(false)
   isBlocked      Boolean  @default(false)
+  isTracking     Boolean  @default(false)
+  isManualMode   Boolean  @default(false)
+  personaMode    String   @default("auto")
 
   personalPrompt String?  @db.Text
   personalModel  String?
   tokensUsed     Int      @default(0)
+  aiSummary      String?  @default("Идет сбор данных...")
 
   createdAt      DateTime @default(now())
   lastSeen       DateTime @updatedAt

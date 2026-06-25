@@ -1,7 +1,7 @@
 import { Bot } from "grammy";
 import { env } from "../../config/env";
 import { chatService } from "../../services/chat.service";
-import { handleAdminTextState } from "./admin.handler";
+import { handleAdminInputState } from "./admin.handler";
 
 function isTextMessage(ctx: any) {
   return Boolean(ctx.message && "text" in ctx.message && typeof ctx.message.text === "string");
@@ -55,11 +55,29 @@ export async function onMessage(ctx: any, _bot: Bot<any>) {
       return;
     }
 
-    // Admin text state handling (waiting for model name, prompt, etc.)
-    if (isTextMessage(ctx)) {
-      const text = (ctx.message as { text: string }).text.trim();
-      if (!text.startsWith("/") && (await handleAdminTextState(ctx, text))) {
-        return;
+    // Admin state handling (waiting for model name, prompt, broadcast, etc.)
+    if (ctx.message) {
+      const isText = isTextMessage(ctx);
+      const text = isText ? (ctx.message as { text: string }).text.trim() : "";
+      
+      // Игнорируем команды для состояний (кроме отмены)
+      if (text === "/cancel") {
+        await ctx.reply("Действие отменено.");
+        // clearUserState happens inside handleAdminInputState implicitly if we don't catch it, 
+        // but let's just let it fall through or we can just return.
+        // Actually, handleAdminInputState clears state on any message.
+      }
+      
+      if (!isText || !text.startsWith("/")) {
+        if (await handleAdminInputState(ctx)) {
+          return;
+        }
+      } else if (text === "/cancel") {
+        // Если это /cancel, мы просто вызываем функцию с пустым контекстом, чтобы очистить состояние,
+        // либо пусть сама функция handleAdminInputState очистит. Она очищает state в блоке finally.
+        if (await handleAdminInputState(ctx)) {
+           return;
+        }
       }
     }
 
@@ -71,7 +89,7 @@ export async function onMessage(ctx: any, _bot: Bot<any>) {
 }
 
 export function registerChatHandlers(bot: Bot<any>) {
-  bot.on("message:text", async (ctx) => {
+  bot.on("message", async (ctx) => {
     await onMessage(ctx, bot);
   });
 }

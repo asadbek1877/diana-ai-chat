@@ -32,6 +32,7 @@ export const env = {
   API_ID: requirePositiveNumberEnv("API_ID"),
   BOT_TOKEN: requireEnv("BOT_TOKEN"),
   DATABASE_URL: requireEnv("DATABASE_URL"),
+  GEMINI_API_KEY: process.env.GEMINI_API_KEY?.trim() || "",
   GROQ_API_KEY: requireEnv("GROQ_API_KEY"),
   OPENROUTER_API_KEY: requireEnv("OPENROUTER_API_KEY"),
   PORT: Number(process.env.PORT || 3000),

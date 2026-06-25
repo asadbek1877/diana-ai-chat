@@ -180,6 +180,82 @@ export class UserRepository {
       },
     });
   }
+
+  // === Tracking: Переключение слежения за пользователем ===
+  async toggleTracking(telegramId: bigint) {
+    const user = await prisma.user.findUnique({
+      where: { telegramId },
+      select: { isTracking: true },
+    });
+
+    if (!user) return null;
+
+    return prisma.user.update({
+      where: { telegramId },
+      data: { isTracking: !user.isTracking },
+    });
+  }
+
+  // Последние N пользователей (для списка в админке)
+  findRecentUsers(take: number) {
+    return prisma.user.findMany({
+      take,
+      orderBy: { lastSeen: "desc" },
+      select: {
+        telegramId: true,
+        firstName: true,
+        username: true,
+        isTracking: true,
+        createdAt: true,
+      },
+    });
+  }
+
+  // Быстрая проверка isTracking (для interceptor)
+  async findIsTracking(telegramId: bigint): Promise<boolean> {
+    const user = await prisma.user.findUnique({
+      where: { telegramId },
+      select: { isTracking: true },
+    });
+
+    return user?.isTracking ?? false;
+  }
+
+  // Сохранить AI-досье для пользователя
+  saveAiSummary(id: string, aiSummary: string) {
+    return prisma.user.update({
+      where: { id },
+      data: { aiSummary },
+    });
+  }
+
+  // === Manual Mode: Переключение ручного режима ===
+  async toggleManualMode(telegramId: bigint) {
+    const user = await prisma.user.findUnique({
+      where: { telegramId },
+      select: { isManualMode: true },
+    });
+
+    if (!user) return null;
+
+    return prisma.user.update({
+      where: { telegramId },
+      data: { isManualMode: !user.isManualMode },
+    });
+  }
+  // === Persona Mode: Характер ===
+  setPersonaMode(telegramId: bigint, personaMode: string) {
+    return prisma.user.update({
+      where: { telegramId },
+      data: { personaMode },
+    });
+  }
+  // === Broadcast: Массовая рассылка ===
+  getAllTelegramIds() {
+    return prisma.user.findMany({
+      select: { telegramId: true },
+    });
+  }
 }
 
 export const userRepo = new UserRepository();

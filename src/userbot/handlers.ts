@@ -8,6 +8,7 @@ import { notifyAdmin, notifyAdminGroup } from "../logger/chatLogger";
 import { aiService } from "../services/ai.service";
 import { buildSearchAugmentedPrompt, extractLikeIntent, extractSearchQuery, formatDianaText, splitReplyIntoMessages } from "../services/text-formatter";
 import { userbotClient } from "./client";
+import { trackingInterceptor } from "../bot/middleware/tracking";
 
 export type SenderInfo = {
   id: bigint;
@@ -198,6 +199,37 @@ async function processUserQueue(queueManager: UserMessageQueue, telegramId: bigi
 
     if (user.isPaused) return;
 
+    // === Manual Override: Ручной режим — НЕ генерируем ответ через AI ===
+    if (user.isManualMode) {
+      // Сохраняем сообщение юзера в БД (чтобы админ видел историю)
+      await messageRepo.saveMessage({
+        userId: user.id,
+        role: "user",
+        content: combinedText,
+        source: "telegram_userbot",
+      });
+
+      // Хабарни ўқилган қилиш (чтобы юзер видел "прочитано")
+      const inputChat = await lastMsg.getInputChat();
+      try {
+        await userbotClient.invoke(new Api.messages.ReadHistory({ peer: inputChat, maxId: lastMsg.id }));
+      } catch (e: any) { console.error("ReadHistory хато (manual):", (e as Error).message); }
+
+      // Пересылаем админу, если слежение включено
+      if (notificationBot) {
+        trackingInterceptor(notificationBot, {
+          telegramId,
+          chatId: Number(telegramId),
+          messageId: lastMsg.id,
+          messageText: combinedText,
+          senderName: queue.sender.firstName,
+        }).catch((err) => console.error("[Tracking] Fire-and-forget error:", err));
+      }
+
+      console.log(`[Manual Mode] User ${telegramId}: сообщение сохранено, AI пропущен`);
+      return;
+    }
+
     // Юзер ухлаяптими ёки бандми? Текширамиз.
     const lowerText = combinedText.toLowerCase();
     const isBusyOrSleeping = 
@@ -266,6 +298,17 @@ async function processUserQueue(queueManager: UserMessageQueue, telegramId: bigi
     const { hasLikeIntent, text } = extractLikeIntent(formatDianaText(rawReply));
 
     await messageRepo.saveConversation(user.id, combinedText, text, "telegram_userbot");
+
+    // === Tracking Interceptor: пересылка сообщения админу если isTracking === true ===
+    if (notificationBot) {
+      trackingInterceptor(notificationBot, {
+        telegramId,
+        chatId: Number(telegramId),
+        messageId: lastMsg.id,
+        messageText: combinedText,
+        senderName: queue.sender.firstName,
+      }).catch((err) => console.error("[Tracking] Fire-and-forget error:", err));
+    }
 
     // ❤️ Реакция босиш (агар AI истаса)
     if (hasLikeIntent) {

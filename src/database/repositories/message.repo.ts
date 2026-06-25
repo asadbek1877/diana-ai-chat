@@ -93,6 +93,59 @@ export class MessageRepository {
       orderBy: { createdAt: "asc" },
     });
   }
+
+  // Все сообщения пользователя для экспорта в .txt (ASC, без лимита)
+  findAllByUserId(userId: string) {
+    return prisma.message.findMany({
+      where: { userId },
+      orderBy: { createdAt: "asc" },
+      select: { role: true, content: true, createdAt: true, source: true },
+    });
+  }
+
+  // Последние N сообщений для анализа Gemini (в хронологическом порядке)
+  findRecentForAnalysis(userId: string, take = 40) {
+    return prisma.message.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      take,
+      select: { role: true, content: true, createdAt: true },
+    }).then((rows) => rows.reverse()); // возвращаем в хронологическом порядке
+  }
+  // === Statistics ===
+  getMessagesCountSince24h() {
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    return prisma.message.count({
+      where: { createdAt: { gte: yesterday } },
+    });
+  }
+
+  async getTopActiveUsersSince24h(take = 3) {
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const top = await prisma.message.groupBy({
+      by: ['userId'],
+      where: {
+        createdAt: { gte: yesterday },
+        role: "user"
+      },
+      _count: { id: true },
+      orderBy: { _count: { id: "desc" } },
+      take,
+    });
+    
+    if (top.length === 0) return [];
+
+    const userIds = top.map(t => t.userId);
+    const users = await prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, firstName: true }
+    });
+    
+    return top.map(t => ({
+      firstName: users.find(u => u.id === t.userId)?.firstName || "Без имени",
+      messageCount: t._count.id
+    }));
+  }
 }
 
 export const messageRepo = new MessageRepository();

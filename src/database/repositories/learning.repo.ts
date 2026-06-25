@@ -43,4 +43,11 @@ export class LearningRepo {
       orderBy: { createdAt: "asc" },
     });
   }
+  // Очистить все факты (перевести в неактивные)
+  static async clearMemoryRules() {
+    return prisma.learnedRule.updateMany({
+      where: { isActive: true },
+      data: { isActive: false },
+    });
+  }
 }
