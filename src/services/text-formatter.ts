@@ -10,29 +10,30 @@ const INFORMAL_REPLACEMENTS: Array<[RegExp, string]> = [
   [/Хорошо/gi, "окей"],
 ];
 
+const LIKE_REGEX = /\[like\]|\(like\)/i;
+
 export function formatDianaText(text: string) {
-  let formattedText = text.trim().replace(/[.!]+$/, "");
+  let formattedText = text.trim();
+
+  // Удаляем пустые скобки, если нейросеть случайно их сгенерировала
+  formattedText = formattedText.replace(/\(\)/g, "").trim();
+
+  // Удаляем конечные точки (чтобы было более неформально)
+  formattedText = formattedText.replace(/[.!]+$/, "");
 
   for (const [pattern, replacement] of INFORMAL_REPLACEMENTS) {
     formattedText = formattedText.replace(pattern, replacement);
   }
 
-  if (formattedText.length > 0 && !formattedText.startsWith(LIKE_TAG)) {
-    return formattedText.toLowerCase();
-  }
-
-  if (formattedText.startsWith(LIKE_TAG) && formattedText.length > LIKE_TAG.length) {
-    return LIKE_TAG + formattedText.substring(LIKE_TAG.length).toLowerCase();
-  }
-
-  return formattedText;
+  // Делаем lowercase для всего текста (эмодзи и [like] при этом не пострадают)
+  return formattedText.toLowerCase();
 }
 
 export function extractLikeIntent(text: string) {
-  const hasLikeIntent = text.includes(LIKE_TAG);
+  const hasLikeIntent = LIKE_REGEX.test(text);
   return {
     hasLikeIntent,
-    text: hasLikeIntent ? text.replace(LIKE_TAG, "").trim() : text,
+    text: hasLikeIntent ? text.replace(LIKE_REGEX, "").trim() : text,
   };
 }
 
