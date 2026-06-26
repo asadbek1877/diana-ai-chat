@@ -50,6 +50,32 @@ export class SettingsRepository {
     return updated;
   }
 
+  async toggleNotifications() {
+    const settings = await this.getSettings();
+
+    if (!settings) {
+      const created = await prisma.settings.create({
+        data: {
+          isNotificationsEnabled: false,
+          systemPrompt: "Ты Диана, дерзкая и веселая девушка...",
+        },
+      });
+
+      this.cachedSettings = created;
+      this.cacheExpiresAt = Date.now() + SETTINGS_CACHE_TTL_MS;
+      return created;
+    }
+
+    const updated = await prisma.settings.update({
+      where: { id: settings.id },
+      data: { isNotificationsEnabled: !settings.isNotificationsEnabled },
+    });
+
+    this.cachedSettings = updated;
+    this.cacheExpiresAt = Date.now() + SETTINGS_CACHE_TTL_MS;
+    return updated;
+  }
+
   async saveModel(modelName: string) {
     const settings = await this.getSettings();
 

@@ -8,11 +8,12 @@ datasource db {
 }
 
 model Settings {
-  id           Int      @id @default(1)
-  currentModel String   @default("llama-3.1-8b-instant")
-  systemPrompt String   @db.Text
-  isBotActive  Boolean  @default(true)
-  updatedAt    DateTime @updatedAt
+  id                     Int      @id @default(1)
+  currentModel           String   @default("llama-3.1-8b-instant")
+  systemPrompt           String   @db.Text
+  isBotActive            Boolean  @default(true)
+  isNotificationsEnabled Boolean  @default(true)
+  updatedAt              DateTime @updatedAt
 }
 
 model User {

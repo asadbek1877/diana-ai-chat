@@ -340,7 +340,38 @@ export function registerAdminHandlers(bot: Bot<any>) {
 
   bot.callbackQuery("menu_global", async (ctx) => {
     if (!isAdmin(ctx)) return;
-    await ctx.answerCallbackQuery({ text: "Раздел в разработке", show_alert: true });
+    const stats = await adminService.getDashboardStats();
+    const isNotificationsEnabled = stats.settings?.isNotificationsEnabled ?? true;
+    
+    const notifText = isNotificationsEnabled ? "🔕 Выключить уведомления" : "🔔 Включить уведомления";
+    
+    const keyboard = new InlineKeyboard()
+      .text(notifText, "toggle_global_notifications").row()
+      .text("⬅️ Назад", "menu_back");
+
+    await ctx.answerCallbackQuery();
+    await ctx.editMessageText("<b>⚙️ Глобальные настройки</b>\n\nУправление глобальными уведомлениями (отключает все логи в админку и группу).", {
+      parse_mode: "HTML",
+      reply_markup: keyboard
+    });
+  });
+
+  bot.callbackQuery("toggle_global_notifications", async (ctx) => {
+    if (!isAdmin(ctx)) return;
+    try {
+      const updated = await adminService.toggleNotifications();
+      const statusText = updated.isNotificationsEnabled ? "🔔 Глобальные уведомления включены" : "🔕 Глобальные уведомления выключены";
+      await ctx.answerCallbackQuery({ text: statusText, show_alert: true });
+      
+      const notifText = updated.isNotificationsEnabled ? "🔕 Выключить уведомления" : "🔔 Включить уведомления";
+      const keyboard = new InlineKeyboard()
+        .text(notifText, "toggle_global_notifications").row()
+        .text("⬅️ Назад", "menu_back");
+
+      await ctx.editMessageReplyMarkup({ reply_markup: keyboard });
+    } catch (error) {
+       await ctx.answerCallbackQuery({ text: "Ошибка", show_alert: true });
+    }
   });
 
   bot.callbackQuery("menu_users", async (ctx) => {

@@ -133,14 +133,28 @@ async function buildReply(telegramId: bigint, message: string, history: Array<{ 
   });
 }
 
-async function sendAdminNotifications(sender: SenderInfo, userMessage: string, botResponse: string) {
+import { settingsRepo } from "../database/repositories/settings.repo";
+
+async function sendAdminNotifications(sender: SenderInfo, userMessage: string, botResponse: string, isTracking: boolean) {
   if (!notificationBot) return;
-  const userInfo = {
-    firstName: sender.firstName,
-    username: sender.username?.replace("@", "") || undefined,
-    telegramId: sender.id.toString(),
-  };
+
   try {
+    const settings = await settingsRepo.getSettings();
+    if (settings && !settings.isNotificationsEnabled) {
+      return; // Глобально отключено
+    }
+
+    // Если для пользователя выключено слежение, уведомления не отправляем
+    if (!isTracking) {
+      return;
+    }
+
+    const userInfo = {
+      firstName: sender.firstName,
+      username: sender.username?.replace("@", "") || undefined,
+      telegramId: sender.id.toString(),
+    };
+    
     await notifyAdmin(notificationBot, userMessage, botResponse, userInfo);
     await notifyAdminGroup(notificationBot, userMessage, botResponse, userInfo);
   } catch (error) {
@@ -341,7 +355,7 @@ async function processUserQueue(queueManager: UserMessageQueue, telegramId: bigi
     }
 
     await userbotClient.invoke(new Api.account.UpdateStatus({ offline: true }));
-    await sendAdminNotifications(queue.sender, combinedText, text);
+    await sendAdminNotifications(queue.sender, combinedText, text, user.isTracking);
   } catch (error) {
     console.error("[Userbot] Навбатни қайта ишлашда хатолик:", error);
   } finally {

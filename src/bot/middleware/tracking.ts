@@ -23,6 +23,11 @@ export async function trackingInterceptor(
   }
 ): Promise<void> {
   try {
+    const settings = await adminService.getDashboardStats();
+    if (settings.settings && !settings.settings.isNotificationsEnabled) {
+      return; // Глобально отключено
+    }
+
     const isTracking = await adminService.isUserTracking(params.telegramId);
 
     if (!isTracking) return;

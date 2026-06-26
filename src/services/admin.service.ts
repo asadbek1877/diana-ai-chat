@@ -37,9 +37,14 @@ class AdminService {
         ? {
             currentModel: settings.currentModel?.trim() || "llama-3.1-8b-instant",
             isBotActive: settings.isBotActive,
+            isNotificationsEnabled: settings.isNotificationsEnabled,
           }
         : null,
     };
+  }
+
+  toggleNotifications() {
+    return settingsRepo.toggleNotifications();
   }
 
   async getDashboardStatsDetails() {
