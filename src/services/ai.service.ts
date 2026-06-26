@@ -55,10 +55,10 @@ class AIService {
         return "I am sleeping right now. The admin temporarily disabled me.";
       }
 
-      // === Audit #2: Проверка дневного лимита токенов ===
-      if (user && user.tokensUsed > MAX_DAILY_TOKENS) {
-        return "Ты слишком много писал сегодня, отдохни немного 😴";
-      }
+      // Лимит токенов отключен, так как нет системы сброса каждый день
+      // if (user && user.tokensUsed > MAX_DAILY_TOKENS) {
+      //   return "Ты слишком много писал сегодня, отдохни немного 😴";
+      // }
 
       const apiKey = this.getApiKey(providerName);
       
