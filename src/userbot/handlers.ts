@@ -68,7 +68,7 @@ class UserMessageQueue {
         existing.imageBase64 = input.imageBase64;
         existing.imageMimeType = input.imageMimeType;
       }
-      existing.timer = setTimeout(() => this.processQueue(input.telegramId), 4000);
+      existing.timer = setTimeout(() => this.processQueue(input.telegramId), 1000);
       existing.ttlTimer = setTimeout(() => this.clear(input.telegramId), 5 * 60 * 1000);
       return;
     }
@@ -80,7 +80,7 @@ class UserMessageQueue {
       lastMessage: input.messageObj,
       imageBase64: input.imageBase64,
       imageMimeType: input.imageMimeType,
-      timer: setTimeout(() => this.processQueue(input.telegramId), 4000),
+      timer: setTimeout(() => this.processQueue(input.telegramId), 1000),
       ttlTimer: setTimeout(() => this.clear(input.telegramId), 5 * 60 * 1000),
     });
   }
@@ -140,7 +140,7 @@ async function sendAdminNotifications(sender: SenderInfo, userMessage: string, b
 
   try {
     const settings = await settingsRepo.getSettings();
-    if (settings && !settings.isNotificationsEnabled) {
+    if (settings && (settings as any).isNotificationsEnabled === false) {
       return; // Глобально отключено
     }
 
@@ -259,7 +259,7 @@ async function processUserQueue(queueManager: UserMessageQueue, telegramId: bigi
     await userRepo.updateActivity(telegramId, !isBusyOrSleeping);
 
     await userbotClient.invoke(new Api.account.UpdateStatus({ offline: false }));
-    await new Promise((resolve) => setTimeout(resolve, Math.max(2000, Math.min(6000, combinedText.length * 50))));
+    // Искусственная задержка перед печатью убрана для моментального ответа
     
     // Telegram'га мурожаат қилиш учун ЭНГ ТЎҒРИ ва ХАВФСИЗ усул (InputChat)
     const inputChat = await lastMsg.getInputChat();
@@ -341,7 +341,8 @@ async function processUserQueue(queueManager: UserMessageQueue, telegramId: bigi
       const textToSend = messages[i].trim();
       if (!textToSend) continue;
 
-      await new Promise((resolve) => setTimeout(resolve, Math.max(1500, textToSend.length * 60)));
+      // Минимальная задержка между частями сообщения (100мс)
+      await new Promise((resolve) => setTimeout(resolve, 100));
       
       // МАНА ШУ ЕРДА ЭНДИ БЕХАТО ИШЛАЙДИ
       await userbotClient.sendMessage(inputChat, { message: textToSend });
@@ -350,7 +351,7 @@ async function processUserQueue(queueManager: UserMessageQueue, telegramId: bigi
         try {
             await userbotClient.invoke(new Api.messages.SetTyping({ peer: inputChat, action: new Api.SendMessageTypingAction() }));
         } catch (e) { }
-        await new Promise((resolve) => setTimeout(resolve, 800));
+        await new Promise((resolve) => setTimeout(resolve, 100));
       }
     }
 

@@ -37,7 +37,7 @@ class AdminService {
         ? {
             currentModel: settings.currentModel?.trim() || "llama-3.1-8b-instant",
             isBotActive: settings.isBotActive,
-            isNotificationsEnabled: settings.isNotificationsEnabled,
+            isNotificationsEnabled: (settings as any).isNotificationsEnabled,
           }
         : null,
     };
