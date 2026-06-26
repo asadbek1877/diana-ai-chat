@@ -28,10 +28,15 @@ export async function handleAdminGroupReply(ctx: any) {
     return;
   }
 
-  // Admin manually replies to a user — send via Bot API (this is intentional,
-  // admin overrides are sent from the bot, not the userbot)
+  // Admin manually replies to a user — send via Userbot
   if (result.textToSend) {
-    await ctx.api.sendMessage(Number(result.targetTelegramId), result.textToSend);
+    const { userbotClient } = require("../../userbot/client");
+    try {
+      await userbotClient.sendMessage(result.targetTelegramId, { message: result.textToSend });
+    } catch (err) {
+      console.error("Admin group reply error:", err);
+      await ctx.reply("❌ Ошибка при отправке сообщения юзеру через Userbot.");
+    }
   }
 }
 

@@ -172,7 +172,11 @@ async function renderUserProfile(ctx: any, telegramId: string) {
   const user = await adminService.getUserProfile(telegramId);
 
   if (!user) {
-    await ctx.answerCallbackQuery({ text: "Пользователь не найден", show_alert: true });
+    if (ctx.callbackQuery) {
+      await ctx.answerCallbackQuery({ text: "Пользователь не найден", show_alert: true });
+    } else {
+      await ctx.reply("Пользователь не найден");
+    }
     return;
   }
 
@@ -183,30 +187,35 @@ async function renderUserProfile(ctx: any, telegramId: string) {
   const personaLabel = getPersonaLabel((user as any).personaMode);
   const aiSummary = escapeHtml((user as any).aiSummary ?? "Идет сбор данных...");
 
-  await ctx.editMessageText(
-    [
-      `<b>📋 Карточка пользователя</b>`,
-      "",
-      `👤 <b>Имя:</b> ${escapeHtml(user.firstName ?? "Без имени")}`,
-      `🆔 <b>Telegram ID:</b> <code>${user.telegramId.toString()}</code>`,
-      `📅 <b>Дата регистрации:</b> ${formatDate(user.createdAt)}`,
-      "",
-      `🔎 <b>Живой мониторинг:</b> ${trackingStatus}`,
-      `🤖 <b>Режим ИИ (Gemini):</b> ${aiModeStatus}`,
-      `🎭 <b>Характер (Стиль):</b> ${personaLabel}`,
-      "",
-      `<b>Токенов потрачено:</b> ${user.tokensUsed}`,
-      `<b>Персональная модель:</b> ${escapeHtml(user.personalModel || "Глобальная")}`,
-      `<b>Персональный промпт:</b> ${user.personalPrompt ? "✅ Установлен" : "Глобальный"}`,
-      "",
-      `📝 <b>Краткое досье от Дианы (Gemini):</b>`,
-      `<i>${aiSummary}</i>`,
-    ].join("\n"),
-    {
-      parse_mode: "HTML",
-      reply_markup: buildUserProfileMenu(telegramId, (user as any).isTracking, (user as any).isManualMode),
-    }
-  );
+  const text = [
+    `<b>📋 Карточка пользователя</b>`,
+    "",
+    `👤 <b>Имя:</b> ${escapeHtml(user.firstName ?? "Без имени")}`,
+    `🆔 <b>Telegram ID:</b> <code>${user.telegramId.toString()}</code>`,
+    `📅 <b>Дата регистрации:</b> ${formatDate(user.createdAt)}`,
+    "",
+    `🔎 <b>Живой мониторинг:</b> ${trackingStatus}`,
+    `🤖 <b>Режим ИИ (Gemini):</b> ${aiModeStatus}`,
+    `🎭 <b>Характер (Стиль):</b> ${personaLabel}`,
+    "",
+    `<b>Токенов потрачено:</b> ${user.tokensUsed}`,
+    `<b>Персональная модель:</b> ${escapeHtml(user.personalModel || "Глобальная")}`,
+    `<b>Персональный промпт:</b> ${user.personalPrompt ? "✅ Установлен" : "Глобальный"}`,
+    "",
+    `📝 <b>Краткое досье от Дианы (Gemini):</b>`,
+    `<i>${aiSummary}</i>`,
+  ].join("\n");
+
+  const payload = {
+    parse_mode: "HTML" as const,
+    reply_markup: buildUserProfileMenu(telegramId, (user as any).isTracking, (user as any).isManualMode),
+  };
+
+  if (ctx.callbackQuery) {
+    await ctx.editMessageText(text, payload);
+  } else {
+    await ctx.reply(text, payload);
+  }
 }
 
 export async function handleStart(ctx: any) {
@@ -259,14 +268,16 @@ export async function handleAdminInputState(ctx: any) {
           return true;
         }
 
-        // Отправляем текст юзеру от имени бота (Дианы)
-        await ctx.api.sendMessage(Number(result.targetTelegramId), text);
+        // Отправляем текст юзеру через Userbot (от имени Дианы)
+        const { userbotClient } = require("../../userbot/client");
+        await userbotClient.sendMessage(result.targetTelegramId, { message: text });
+        
         await ctx.reply(`✅ Сообщение отправлено пользователю <code>${state.telegramId}</code>`, {
           parse_mode: "HTML",
         });
       } catch (sendError) {
         console.error("Send manual message error:", sendError);
-        await ctx.reply("❌ Ошибка при отправке сообщения.");
+        await ctx.reply("❌ Ошибка при отправке сообщения. Возможно, пользователь заблокировал Диану.");
       }
       return true;
     }
